@@ -1,0 +1,64 @@
+"use client";
+
+import { Report } from "@/lib/types";
+
+interface ReportListProps {
+  reports: Report[];
+}
+
+function formatDate(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function getCategoryLabel(category: string): string {
+  const labels: Record<string, string> = {
+    HEALTH: "Health",
+    ROI: "ROI",
+    COMPLIANCE: "Compliance",
+  };
+  return labels[category] || category;
+}
+
+export function ReportList({ reports }: ReportListProps) {
+  if (reports.length === 0) {
+    return (
+      <div className="text-center py-12 text-[#94a3b8]">
+        No reports generated yet
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {reports.map((report) => (
+        <div
+          key={report.id}
+          className="flex items-center justify-between p-4 bg-[#1e293b] border border-[#334155] rounded-lg hover:border-[#3b82f6] transition-colors"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 flex items-center justify-center bg-[#334155] rounded-lg">
+              <span className="text-xs font-medium text-[#94a3b8]">{report.type}</span>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-[#f1f5f9]">{report.name}</h3>
+              <p className="text-xs text-[#94a3b8] mt-0.5">
+                {getCategoryLabel(report.category)} · {report.assets.length} assets · {formatDate(report.createdAt)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-1 text-xs font-medium bg-[#22c55e]/20 text-[#22c55e] rounded">
+              {report.status}
+            </span>
+            <button className="p-2 text-[#94a3b8] hover:text-[#f1f5f9] transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

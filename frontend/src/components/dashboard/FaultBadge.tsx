@@ -1,0 +1,28 @@
+"use client";
+
+import { FaultPrediction } from "@/lib/types";
+
+interface FaultBadgeProps {
+  prediction: FaultPrediction;
+}
+
+export function FaultBadge({ prediction }: FaultBadgeProps) {
+  const isNormal = prediction.faultType === "Normal Operation";
+  const statusColor = isNormal 
+    ? "bg-[#22c55e]/20 text-[#22c55e]" 
+    : "bg-[#ef4444]/20 text-[#ef4444]";
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <span className={`px-3 py-1.5 rounded-full text-sm font-medium ${statusColor}`}>
+          {prediction.faultType}
+        </span>
+        <span className="text-sm text-[#94a3b8]">
+          {prediction.confidence}% confidence
+        </span>
+      </div>
+      <p className="text-sm text-[#94a3b8]">{prediction.description}</p>
+    </div>
+  );
+}
