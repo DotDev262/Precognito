@@ -14,8 +14,8 @@ from pathlib import Path
 
 # Configuration
 SENSOR_CONFIG = {
-    "temperature": {"min": 298.0, "max": 310.0, "critical": 320.0},
-    "vibration": {"min": 1200.0, "max": 1800.0, "critical": 2000.0}, 
+    "temperature": {"min": 290.0, "max": 310.0, "critical": 330.0},
+    "vibration": {"min": 0.1, "max": 2.0, "critical": 3.0},
     "torque": {"min": 20.0, "max": 60.0, "critical": 80.0}
 }
 SEVERITY_THRESHOLDS = {"LOW": 0.1, "MODERATE": 0.25, "HIGH": 0.5, "CRITICAL": 0.75}
@@ -142,7 +142,9 @@ class AnomalyDetector:
             ml_result = self._detect_ml_anomaly(data)
             
             # Combine results
-            final_anomaly = pattern_result["anomaly_detected"] or ml_result["anomaly_detected"]
+            final_anomaly = pattern_result["anomaly_detected"] or (
+            ml_result["anomaly_detected"] and pattern_result["confidence"] > 0
+            )
             
             return {
                 "machine_id": machine_id,
