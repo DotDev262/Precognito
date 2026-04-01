@@ -35,25 +35,21 @@ class PatternDetector:
             if sensor in SENSOR_CONFIG and value is not None:
                 self.history[machine_id][sensor].append(float(value))
 
-    def detect_spike(self, machine_id: str, sensor: str, current_value: float):
+    def detect_spike(self, machine_id: str, sensor: str, current_value: float) -> Tuple[bool, float, str]:
         if sensor not in self.history[machine_id] or len(self.history[machine_id][sensor]) < 3:
             return False, 0.0, "Insufficient data"
-
-        values = list(self.history[machine_id][sensor])
-        mean_val = np.mean(values)
-        std_val = np.std(values)
-
+        
+        recent_values = list(self.history[machine_id][sensor])[:-1]
+        mean_val, std_val = np.mean(recent_values), np.std(recent_values)
+        
         if std_val == 0:
             return False, 0.0, "No variance"
-
+        
         z_score = abs((current_value - mean_val) / std_val)
-
-        # 🔥 FIX: add threshold fallback
-        threshold_exceeded = current_value > SENSOR_CONFIG[sensor]["max"]
-
-        is_spike = z_score > self.spike_threshold or threshold_exceeded
-
-        reason = f"{sensor} spike: value={current_value}, mean={mean_val:.2f}, z={z_score:.2f}"
+        # Higher threshold for pattern detection to reduce false positives
+        is_spike = z_score > 3.0  # Increased from 2.5
+        
+        reason = f"Spike: {sensor}={current_value:.2f} deviates {z_score:.2f}σ from mean {mean_val:.2f}"
         return is_spike, z_score, reason
 
     def detect_pattern_anomaly(self, machine_id: str, data: Dict):
@@ -125,7 +121,9 @@ class AnomalyDetector:
                         self.feature_stats = json.load(f)
                 
                 self.initialized = True
-                logger.info("Model loaded successfully")
+                logger.info("ML model loaded successfully")
+            else:
+                logger.warning("Model files not found, using fallback detection")
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
     
@@ -145,10 +143,8 @@ class AnomalyDetector:
             # ML detection (simplified)
             ml_result = self._detect_ml_anomaly(data)
             
-            # Combine results
-            final_anomaly = pattern_result["anomaly_detected"] or (
-            ml_result["anomaly_detected"] and pattern_result["confidence"] > 0
-            )
+            # Combine results - ML should take priority
+            final_anomaly = pattern_result["anomaly_detected"] or ml_result["anomaly_detected"]
             
             return {
                 "machine_id": machine_id,
@@ -171,29 +167,113 @@ class AnomalyDetector:
             return self._error_response(data, timestamp, f"Detection failed: {str(e)}")
     
     def _detect_ml_anomaly(self, data: Dict) -> Dict:
-        """Simplified ML detection"""
+        """ML-based anomaly detection using trained model"""
         try:
-            # For now, use basic threshold-based detection as fallback
-            anomaly_detected = False
-            anomaly_types = []
-            confidence = 0.0
+            if self.model is None or self.scaler is None:
+                # Fallback to threshold-based detection
+                return self._threshold_detection(data)
             
-            for sensor, value in data.items():
-                if sensor in SENSOR_CONFIG and value is not None:
-                    config = SENSOR_CONFIG[sensor]
-                    if value < config["min"] or value > config["critical"]:
-                        anomaly_detected = True
-                        anomaly_types.append(sensor)
-                        confidence = max(confidence, 0.6)
+            # Prepare data for ML model
+            import pandas as pd
+            
+            # Map input data to training data format
+            # Note: API input maps to training dataset features
+            features = {
+                'Air temperature [K]': float(data.get('temperature', 300.0)),
+                'Process temperature [K]': float(data.get('temperature', 300.0)) + 10.0,  # Estimate
+                'Rotational speed [rpm]': float(data.get('vibration', 1500.0)),
+                'Torque [Nm]': float(data.get('torque', 40.0)),
+                'Tool wear [min]': float(data.get('tool_wear', 50.0)),
+                'Type': data.get('type', 'M')
+            }
+            
+            # Create DataFrame and encode categorical
+            df_features = pd.DataFrame([features])
+            
+            # Load label encoder if available
+            try:
+                import pickle
+                with open('label_encoder.pkl', 'rb') as f:
+                    label_encoder = pickle.load(f)
+                df_features['Type_encoded'] = label_encoder.transform(df_features['Type'])
+                df_features = df_features.drop('Type', axis=1)
+            except:
+                # Fallback: simple encoding
+                type_mapping = {'L': 0, 'M': 1, 'H': 2}
+                df_features['Type_encoded'] = df_features['Type'].map(type_mapping).fillna(1)
+                df_features = df_features.drop('Type', axis=1)
+            
+            # Ensure correct feature order
+            if hasattr(self, 'feature_names') and self.feature_names:
+                df_features = df_features[self.feature_names]
+            
+            # Scale features
+            features_scaled = self.scaler.transform(df_features)
+            
+            # Predict anomaly
+            prediction = self.model.predict(features_scaled)[0]
+            anomaly_score = self.model.decision_function(features_scaled)[0]
+            
+            # Convert prediction: -1 = anomaly, 1 = normal
+            is_anomaly = prediction == -1
+            
+            # Calculate confidence based on anomaly score
+            # More aggressive threshold for anomaly detection
+            confidence = abs(anomaly_score)
+            
+            # Only flag as anomaly if score is significantly negative OR extreme values
+            if anomaly_score < -0.1:  # Higher threshold for true anomalies only
+                is_anomaly = True
+                confidence = abs(anomaly_score)
+            
+            # Also check if it's an extreme value (beyond 3.5 standard deviations)
+            if any(abs(val) > 3.5 for val in features_scaled[0]):
+                is_anomaly = True
+                confidence = max(confidence, 0.8)
+            
+            confidence = min(max(confidence, 0.0), 1.0)
             
             return {
-                "anomaly_detected": anomaly_detected,
-                "anomaly_types": anomaly_types,
+                "anomaly_detected": is_anomaly,
+                "anomaly_types": ["ML_Detected"] if is_anomaly else [],
                 "confidence": confidence,
-                "score": confidence
+                "score": anomaly_score,
+                "method": "ML_IsolationForest"
             }
-        except:
-            return {"anomaly_detected": False, "anomaly_types": [], "confidence": 0.0, "score": 0.0}
+            
+        except Exception as e:
+            logger.error(f"ML detection failed: {e}")
+            # Fallback to threshold detection
+            return self._threshold_detection(data)
+    
+    def _threshold_detection(self, data: Dict) -> Dict:
+        """Fallback threshold-based detection"""
+        anomaly_detected = False
+        anomaly_types = []
+        confidence = 0.0
+        
+        # Use updated sensor config matching dataset ranges
+        sensor_config = {
+            "temperature": {"min": 295.0, "max": 305.0, "critical": 310.0},
+            "vibration": {"min": 1000.0, "max": 2000.0, "critical": 2500.0},
+            "torque": {"min": 20.0, "max": 60.0, "critical": 80.0}
+        }
+        
+        for sensor, value in data.items():
+            if sensor in sensor_config and value is not None:
+                config = sensor_config[sensor]
+                if value < config["min"] or value > config["critical"]:
+                    anomaly_detected = True
+                    anomaly_types.append(sensor)
+                    confidence = max(confidence, 0.6)
+        
+        return {
+            "anomaly_detected": anomaly_detected,
+            "anomaly_types": anomaly_types,
+            "confidence": confidence,
+            "score": confidence,
+            "method": "Threshold"
+        }
     
     def _calculate_severity(self, pattern_result: Dict, ml_result: Dict, final_anomaly: bool) -> str:
         """Calculate combined severity"""
