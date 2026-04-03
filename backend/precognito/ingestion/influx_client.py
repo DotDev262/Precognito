@@ -102,5 +102,4 @@ def check_sustained_thermal(device_id: str, threshold: float = 70.0, window: str
     if not values:
         return False
         
-    # Check if ALL values in the window are above threshold (sustained)
     return all(v > threshold for v in values)
