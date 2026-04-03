@@ -1,42 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "@/lib/auth-client";
 import { api } from "@/lib/api";
-
-export const roleColors: Record<string, string> = {
-  ADMIN: "#ef4444",
-  MANAGER: "#8b5cf6",
-  OT_SPECIALIST: "#3b82f6",
-  TECHNICIAN: "#22c55e",
-  STORE_MANAGER: "#eab308",
-};
+import { NotificationBell } from "./NotificationBell";
+import { roleColors } from "@/lib/constants";
 
 export function Header() {
   const { data: session } = useSession();
   const user = session?.user;
   const router = useRouter();
   const [showDropdown, setShowDropdown] = useState(false);
-  const [alerts, setAlerts] = useState<any[]>([]);
-
-  useEffect(() => {
-    async function loadAlerts() {
-      try {
-        const data = await api.getAlerts();
-        setAlerts(data);
-      } catch (err) {
-        console.error("Failed to load alerts", err);
-      }
-    }
-
-    if (user) {
-      loadAlerts();
-      const interval = setInterval(loadAlerts, 15000); // Check for alerts every 15s
-      return () => clearInterval(interval);
-    }
-  }, [user]);
 
   const handleLogout = async () => {
     await signOut();
@@ -47,7 +23,6 @@ export function Header() {
 
   // @ts-ignore
   const role = user.role || "TECHNICIAN";
-  const unacknowledgedCount = alerts.length;
 
   return (
     <header
@@ -61,31 +36,14 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-4">
-        {unacknowledgedCount > 0 && (
-          <Link
-            href="/alerts"
-            className="relative p-2 text-[#94a3b8] hover:text-[#f1f5f9] transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-              />
-            </svg>
-            <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center bg-[#ef4444] text-white text-[10px] font-bold rounded-full">
-              {unacknowledgedCount}
-            </span>
-          </Link>
-        )}
+        <NotificationBell />
 
         <div className="relative">
           <button
             onClick={() => setShowDropdown(!showDropdown)}
             className="flex items-center gap-2 p-2 rounded-lg hover:bg-[#1e293b] transition-colors"
           >
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium" style={{ backgroundColor: roleColors[role] || "#3b82f6" }}>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium" style={{ backgroundColor: roleColors[role as any] || "#3b82f6" }}>
               {user.name.charAt(0).toUpperCase()}
             </div>
             <div className="text-left hidden sm:block">

@@ -5,19 +5,51 @@ import { ThermalAlert } from "@/lib/types";
 import Link from "next/link";
 
 interface NotificationBellProps {
-  alerts: ThermalAlert[];
+  alerts?: ThermalAlert[]; // Existing alerts from DB
 }
 
-export function NotificationBell({ alerts }: NotificationBellProps) {
+export function NotificationBell({ alerts = [] }: NotificationBellProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [recentAlerts, setRecentAlerts] = useState<ThermalAlert[]>([]);
+  const [realTimeAlerts, setRealTimeAlerts] = useState<any[]>([]);
 
   useEffect(() => {
-    const unacknowledged = alerts.filter((a) => !a.acknowledged).slice(0, 5);
-    setRecentAlerts(unacknowledged);
-  }, [alerts]);
+    // NTFY Topic URL for SSE
+    const topic = "precognito_alerts_demo";
+    const eventSource = new EventSource(`https://ntfy.sh/${topic}/sse`);
 
-  const unacknowledgedCount = alerts.filter((a) => !a.acknowledged).length;
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log("New Real-time Alert:", data);
+        
+        // ntfy sse returns various message types, we only care about 'message'
+        if (data.event === "message") {
+          const newAlert = {
+            id: data.id,
+            title: data.title || "Alert",
+            message: data.message,
+            time: new Date(data.time * 1000).toLocaleTimeString(),
+            priority: data.priority,
+            tags: data.tags || []
+          };
+          
+          setRealTimeAlerts((prev) => [newAlert, ...prev].slice(0, 10));
+          
+          // Play a subtle notification sound if browser allows
+          const audio = new Audio("https://ntfy.sh/static/media/notification.mp3");
+          audio.play().catch(() => {}); 
+        }
+      } catch (err) {
+        console.error("Failed to parse real-time alert", err);
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, []);
+
+  const unacknowledgedCount = realTimeAlerts.length;
 
   return (
     <div className="relative">
@@ -34,7 +66,7 @@ export function NotificationBell({ alerts }: NotificationBellProps) {
           />
         </svg>
         {unacknowledgedCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center bg-[#ef4444] text-white text-xs font-bold rounded-full animate-pulse">
+          <span className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center bg-[#ef4444] text-white text-[10px] font-bold rounded-full animate-bounce">
             {unacknowledgedCount}
           </span>
         )}
@@ -49,51 +81,48 @@ export function NotificationBell({ alerts }: NotificationBellProps) {
           <div className="absolute right-0 top-full mt-2 w-80 bg-[#1e293b] border border-[#334155] rounded-lg shadow-xl z-50 overflow-hidden">
             <div className="p-3 border-b border-[#334155] flex items-center justify-between">
               <h3 className="text-sm font-medium text-[#f1f5f9]">
-                Thermal Alerts
+                Live Notifications
               </h3>
-              <Link
-                href="/ehs"
+              <button
                 className="text-xs text-[#3b82f6] hover:underline"
-                onClick={() => setIsOpen(false)}
+                onClick={() => setRealTimeAlerts([])}
               >
-                View All
-              </Link>
+                Clear All
+              </button>
             </div>
             <div className="max-h-80 overflow-y-auto">
-              {recentAlerts.length > 0 ? (
-                recentAlerts.map((alert) => (
-                  <Link
+              {realTimeAlerts.length > 0 ? (
+                realTimeAlerts.map((alert) => (
+                  <div
                     key={alert.id}
-                    href={`/assets/${alert.assetId}`}
                     className="block p-3 border-b border-[#334155] last:border-0 hover:bg-[#0f172a] transition-colors"
-                    onClick={() => setIsOpen(false)}
                   >
                     <div className="flex items-start gap-2">
                       <span
                         className={`w-2 h-2 mt-1.5 rounded-full ${
-                          alert.severity === "CRITICAL"
+                          alert.priority >= 4
                             ? "bg-[#ef4444]"
                             : "bg-[#eab308]"
                         }`}
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-[#f1f5f9] truncate">
-                          {alert.assetName}
+                        <p className="text-xs font-bold text-[#f1f5f9]">
+                          {alert.title}
                         </p>
-                        <p className="text-xs text-[#94a3b8]">
-                          {alert.currentTemp}°C (+{alert.currentTemp - alert.baselineTemp}°C) -{" "}
-                          {alert.durationMinutes}m
+                        <p className="text-xs text-[#94a3b8] mt-0.5 leading-relaxed">
+                          {alert.message}
                         </p>
-                        <p className="text-xs text-[#64748b] mt-1">
-                          {new Date(alert.timestamp).toLocaleTimeString()}
+                        <p className="text-[10px] text-[#64748b] mt-1">
+                          {alert.time}
                         </p>
                       </div>
                     </div>
-                  </Link>
+                  </div>
                 ))
               ) : (
-                <div className="p-4 text-center text-[#94a3b8] text-sm">
-                  No unacknowledged alerts
+                <div className="p-8 text-center text-[#94a3b8] text-sm">
+                  <p>No new notifications</p>
+                  <p className="text-[10px] mt-2 opacity-50 font-mono">Listening to: precognito_alerts_demo</p>
                 </div>
               )}
             </div>
