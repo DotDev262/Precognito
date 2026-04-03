@@ -70,6 +70,136 @@ async def ingest_data(data: dict, user = Depends(get_current_user)):
         "user": user["name"]
     }
 
+@app.get("/assets")
+async def get_assets(user = Depends(get_current_user)):
+    from precognito.ingestion.influx_client import get_all_devices, query_latest_data
+    
+    device_ids = get_all_devices()
+    assets = []
+    
+    for d_id in device_ids:
+        # Get latest telemetry
+        tel_tables = query_latest_data(d_id, "machine_telemetry")
+        # Get latest prediction
+        pred_tables = query_latest_data(d_id, "predictive_results")
+        
+        asset_info = {
+            "id": d_id,
+            "name": d_id.replace("_", " ").title(),
+            "status": "GREEN", # Default
+            "rms": 0.0,
+            "rul": 0.0,
+            "lastUpdated": None
+        }
+        
+        if tel_tables:
+            for table in tel_tables:
+                for record in table.records:
+                    if record.get_field() == "vibration_rms":
+                        asset_info["rms"] = record.get_value()
+                    asset_info["lastUpdated"] = record.get_time().isoformat()
+        
+        if pred_tables:
+            for table in pred_tables:
+                for record in table.records:
+                    if record.get_field() == "predicted_rul_hours":
+                        asset_info["rul"] = record.get_value()
+                    if record.get_field() == "risk_level":
+                        risk = record.get_value()
+                        if risk == "High-Risk": asset_info["status"] = "RED"
+                        elif risk == "Warning": asset_info["status"] = "YELLOW"
+        
+        assets.append(asset_info)
+        
+    return assets
+
+@app.get("/assets/{device_id}/telemetry")
+async def get_asset_telemetry(device_id: str, range: str = "-24h", user = Depends(get_current_user)):
+    from precognito.ingestion.influx_client import query_historical_data
+    
+    tables = query_historical_data(device_id, "machine_telemetry", range)
+    results = []
+    
+    for table in tables:
+        for record in table.records:
+            results.append(record.values)
+            
+    return results
+
+@app.get("/assets/{device_id}/predictions")
+async def get_asset_predictions(device_id: str, range: str = "-24h", user = Depends(get_current_user)):
+    from precognito.ingestion.influx_client import query_historical_data
+    
+    tables = query_historical_data(device_id, "predictive_results", range)
+    results = []
+    
+    for table in tables:
+        for record in table.records:
+            results.append(record.values)
+            
+    return results
+
+@app.get("/alerts")
+async def get_all_alerts(range: str = "-24h", user = Depends(get_current_user)):
+    from precognito.ingestion.influx_client import INFLUX_BUCKET, INFLUX_ORG, query_api
+    
+    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: {range}) |> filter(fn: (r) => r["_measurement"] == "anomaly_results") |> filter(fn: (r) => r["_field"] == "anomaly_detected") |> filter(fn: (r) => r["_value"] == true) |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")'
+    
+    tables = query_api.query(query, org=INFLUX_ORG)
+    results = []
+    
+    for table in tables:
+        for record in table.records:
+            results.append({
+                "id": f"{record.get_time().timestamp()}-{record.values.get('device_id')}",
+                "deviceId": record.values.get("device_id"),
+                "severity": record.values.get("severity"),
+                "message": record.values.get("reason"),
+                "timestamp": record.get_time().isoformat(),
+                "acknowledged": False
+            })
+            
+    # Sort by timestamp descending
+    results.sort(key=lambda x: x["timestamp"], reverse=True)
+    return results
+
+@app.post("/ingest/dev")
+async def ingest_data_dev(data: dict):
+    """Unauthenticated ingestion for development/testing"""
+    from precognito.ingestion.core import process_ingestion
+
+    device_id = data.get("device_id")
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id is required")
+
+    result = process_ingestion(device_id, data)
+    
+    if not result:
+        raise HTTPException(status_code=500, detail="Ingestion processing failed")
+
+    return {
+        **result,
+        "status": "success",
+        "user": "dev_user"
+    }
+
+@app.get("/heartbeats")
+async def get_heartbeats():
+    from precognito.ingestion.heartbeat import device_status
+    from datetime import datetime
+    
+    results = []
+    for device_id, last_seen in device_status.items():
+        diff = (datetime.now() - last_seen).seconds
+        status = "Active" if diff <= 5 else "Inactive"
+        results.append({
+            "deviceId": device_id,
+            "lastSeen": last_seen.isoformat(),
+            "status": status,
+            "secondsSinceLast": diff
+        })
+    return results
+
 @app.on_event("startup")
 async def startup():
     await get_db_pool()

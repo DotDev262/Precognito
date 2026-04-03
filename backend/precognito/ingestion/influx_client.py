@@ -66,3 +66,22 @@ def query_latest_data(device_id: str, measurement: str = "machine_telemetry"):
     """
     query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: -1h) |> filter(fn: (r) => r["_measurement"] == "{measurement}") |> filter(fn: (r) => r["device_id"] == "{device_id}") |> last()'
     return query_api.query(query, org=INFLUX_ORG)
+
+def query_historical_data(device_id: str, measurement: str, range_start: str = "-24h"):
+    """
+    Query historical data for a device over a specific range
+    """
+    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: {range_start}) |> filter(fn: (r) => r["_measurement"] == "{measurement}") |> filter(fn: (r) => r["device_id"] == "{device_id}") |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")'
+    return query_api.query(query, org=INFLUX_ORG)
+
+def get_all_devices(measurement: str = "machine_telemetry"):
+    """
+    Get a list of all unique device IDs that have sent data
+    """
+    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: -30d) |> filter(fn: (r) => r["_measurement"] == "{measurement}") |> keep(columns: ["device_id"]) |> unique(column: "device_id")'
+    tables = query_api.query(query, org=INFLUX_ORG)
+    devices = []
+    for table in tables:
+        for record in table.records:
+            devices.append(record.values.get("device_id"))
+    return list(set(devices))

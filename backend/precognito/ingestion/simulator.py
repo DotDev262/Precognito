@@ -16,21 +16,29 @@ def generate_sensor_data(device_id="machine_1"):
     if is_anomaly:
         return {
             "device_id": device_id,
+            "type": random.choice(["L", "M", "H"]),
             "temperature": random.uniform(310, 320),
             "vibration": random.uniform(2500, 3000),
+            "vibration_rms": random.uniform(6.0, 10.0),
             "torque": random.uniform(80, 100),
             "pressure": random.uniform(5, 10),
             "tool_wear": random.uniform(180, 250),
+            "freq_spike_1x": random.uniform(0.8, 1.5),
+            "freq_spike_bpfo": random.uniform(0.5, 1.2),
             "timestamp": datetime.now().isoformat()
         }
     
     return {
         "device_id": device_id,
+        "type": random.choice(["L", "M", "H"]),
         "temperature": random.uniform(298, 302),
         "vibration": random.uniform(1400, 1600),
+        "vibration_rms": random.uniform(1.0, 2.5),
         "torque": random.uniform(35, 45),
         "pressure": random.uniform(2, 4),
         "tool_wear": random.uniform(10, 100),
+        "freq_spike_1x": random.uniform(0.0, 0.2),
+        "freq_spike_bpfo": random.uniform(0.0, 0.1),
         "timestamp": datetime.now().isoformat()
     }
 
@@ -44,7 +52,13 @@ def run_http_simulator(url, device_id, interval, auth_token):
         data = generate_sensor_data(device_id)
         try:
             response = requests.post(url, json=data, headers=headers)
-            print(f"HTTP {response.status_code}: {response.json().get('anomaly_analysis', {}).get('severity', 'NORMAL')}")
+            if response.status_code == 200:
+                res_json = response.json()
+                severity = res_json.get('anomaly_analysis', {}).get('severity', 'NORMAL')
+                rul = res_json.get('predictive_analysis', {}).get('predicted_rul_hours', 0)
+                print(f"HTTP 200: Device={device_id}, Severity={severity}, RUL={rul}h")
+            else:
+                print(f"HTTP {response.status_code}: {response.text}")
         except Exception as e:
             print(f"HTTP Error: {e}")
         time.sleep(interval)
@@ -64,7 +78,7 @@ def run_mqtt_simulator(broker, port, device_id, interval):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Precognito Sensor Simulator")
     parser.add_argument("--mode", choices=["http", "mqtt"], default="http", help="Simulator mode")
-    parser.add_argument("--url", default="http://localhost:8000/ingest", help="HTTP Ingestion URL")
+    parser.add_argument("--url", default="http://localhost:8000/ingest/dev", help="HTTP Ingestion URL")
     parser.add_argument("--broker", default="localhost", help="MQTT Broker address")
     parser.add_argument("--port", type=int, default=1883, help="MQTT Port")
     parser.add_argument("--device", default="machine_1", help="Device ID")

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "@/lib/auth-client";
-import { mockThermalAlerts } from "@/lib/mockData";
+import { api } from "@/lib/api";
 
 export const roleColors: Record<string, string> = {
   ADMIN: "#ef4444",
@@ -19,8 +19,24 @@ export function Header() {
   const user = session?.user;
   const router = useRouter();
   const [showDropdown, setShowDropdown] = useState(false);
+  const [alerts, setAlerts] = useState<any[]>([]);
 
-  const unacknowledgedAlerts = mockThermalAlerts.filter((a) => !a.acknowledged).length;
+  useEffect(() => {
+    async function loadAlerts() {
+      try {
+        const data = await api.getAlerts();
+        setAlerts(data);
+      } catch (err) {
+        console.error("Failed to load alerts", err);
+      }
+    }
+
+    if (user) {
+      loadAlerts();
+      const interval = setInterval(loadAlerts, 15000); // Check for alerts every 15s
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   const handleLogout = async () => {
     await signOut();
@@ -31,6 +47,7 @@ export function Header() {
 
   // @ts-ignore
   const role = user.role || "TECHNICIAN";
+  const unacknowledgedCount = alerts.length;
 
   return (
     <header
@@ -44,9 +61,9 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-4">
-        {unacknowledgedAlerts > 0 && (
+        {unacknowledgedCount > 0 && (
           <Link
-            href="/ehs"
+            href="/alerts"
             className="relative p-2 text-[#94a3b8] hover:text-[#f1f5f9] transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -58,7 +75,7 @@ export function Header() {
               />
             </svg>
             <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center bg-[#ef4444] text-white text-[10px] font-bold rounded-full">
-              {unacknowledgedAlerts}
+              {unacknowledgedCount}
             </span>
           </Link>
         )}
