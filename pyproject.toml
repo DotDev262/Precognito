@@ -43,10 +43,32 @@ exclude-dependencies = [
     "nvidia-nvtx-cu12"
 ]
 
+[dependency-groups]
+dev = [
+    "pytest-env>=1.6.0",
+    "pytest-mock>=3.15.1",
+]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.25.0",
     "ruff>=0.9.0",
     "mypy>=1.14.0",
+    "pytest-mock>=3.15.1",
+    "pytest-env>=1.6.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+env = [
+    "DATABASE_URL=sqlite:///./test_precognito.sqlite",
+    "INFLUX_URL=http://localhost:8086",
+    "INFLUX_TOKEN=test_token",
+    "INFLUX_ORG=test_org",
+    "INFLUX_BUCKET=test_bucket",
+    "MQTT_BROKER=localhost",
+    "BETTER_AUTH_SECRET=test_secret"
 ]
