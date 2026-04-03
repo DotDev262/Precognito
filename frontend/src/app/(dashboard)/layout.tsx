@@ -5,6 +5,7 @@ import { Header } from "@/components/dashboard/Header";
 import { useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { OfflineIndicator } from "@/components/ui/OfflineIndicator";
 
 export default function DashboardLayout({
   children,
@@ -39,6 +40,7 @@ export default function DashboardLayout({
         <Header />
         <main className="flex-1 p-6">{children}</main>
       </div>
+      <OfflineIndicator />
     </div>
   );
 }

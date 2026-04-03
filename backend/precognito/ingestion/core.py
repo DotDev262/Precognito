@@ -6,6 +6,7 @@ from precognito.ingestion.influx_client import save_sensor_data, save_anomaly_re
 from precognito.anomaly.core import detect_anomaly
 from precognito.predictive.predictive_engine import predict_rul
 from precognito.notifications import notify_critical_anomaly, notify_safety_alert
+from precognito.work_orders.utils import create_automatic_work_order
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +29,16 @@ def process_ingestion(device_id: str, raw_data: dict):
     anomaly_input = {**processed, "machine_id": device_id}
     anomaly_result = detect_anomaly(anomaly_input)
     
+    severity = anomaly_result.get("severity", "LOW")
+    reason = anomaly_result.get("reason", "Unknown fault detected")
+
     # Trigger external notification if critical
-    if anomaly_result.get("severity") == "CRITICAL" and anomaly_result.get("anomaly_detected"):
-        notify_critical_anomaly(device_id, anomaly_result.get("reason", "Unknown fault detected"))
+    if severity == "CRITICAL" and anomaly_result.get("anomaly_detected"):
+        notify_critical_anomaly(device_id, reason)
+
+    # US-4.1: Automated Work Order Creation
+    if severity in ["HIGH", "CRITICAL"] and anomaly_result.get("anomaly_detected"):
+        create_automatic_work_order(device_id, severity, reason)
 
     # 4. Predict RUL
     predictive_result = predict_rul(processed)

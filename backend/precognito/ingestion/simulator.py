@@ -5,40 +5,50 @@ import requests
 import argparse
 from datetime import datetime
 import paho.mqtt.client as mqtt
+import numpy as np
+from precognito.ingestion.dsp import process_raw_edge_data
 
 def generate_sensor_data(device_id="machine_1"):
     # Normal ranges based on SENSOR_CONFIG in anomaly/core.py
     # temperature: 295-305, vibration: 1000-2000, torque: 20-60
     
-    # Introduce occasional anomalies
+    # Simulate high-frequency raw vibration data (1000 samples = 1s at 1kHz)
+    t = np.linspace(0, 1, 1000)
     is_anomaly = random.random() < 0.1
     
     if is_anomaly:
+        # Complex wave with higher frequency components and noise
+        # 50Hz (misalignment) + 100Hz (bearing) + noise
+        raw_vibration = 5.0 * np.sin(2 * np.pi * 50 * t) + 3.0 * np.sin(2 * np.pi * 100 * t) + np.random.normal(0, 2, 1000)
+        
+        # Calculate features locally (Edge Simulation)
+        edge_features = process_raw_edge_data(raw_vibration.tolist())
+        
         return {
             "device_id": device_id,
             "type": random.choice(["L", "M", "H"]),
             "temperature": random.uniform(310, 320),
-            "vibration": random.uniform(2500, 3000),
-            "vibration_rms": random.uniform(6.0, 10.0),
+            "vibration": random.uniform(2500, 3000), # Total energy
+            **edge_features,
             "torque": random.uniform(80, 100),
             "pressure": random.uniform(5, 10),
             "tool_wear": random.uniform(180, 250),
-            "freq_spike_1x": random.uniform(0.8, 1.5),
-            "freq_spike_bpfo": random.uniform(0.5, 1.2),
             "timestamp": datetime.now().isoformat()
         }
+    
+    # Healthy wave
+    raw_vibration = 1.0 * np.sin(2 * np.pi * 20 * t) + np.random.normal(0, 0.5, 1000)
+    edge_features = process_raw_edge_data(raw_vibration.tolist())
     
     return {
         "device_id": device_id,
         "type": random.choice(["L", "M", "H"]),
         "temperature": random.uniform(298, 302),
         "vibration": random.uniform(1400, 1600),
-        "vibration_rms": random.uniform(1.0, 2.5),
+        **edge_features,
         "torque": random.uniform(35, 45),
         "pressure": random.uniform(2, 4),
         "tool_wear": random.uniform(10, 100),
-        "freq_spike_1x": random.uniform(0.0, 0.2),
-        "freq_spike_bpfo": random.uniform(0.0, 0.1),
         "timestamp": datetime.now().isoformat()
     }
 
