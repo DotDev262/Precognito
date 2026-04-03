@@ -53,21 +53,20 @@ def home():
 
 @app.post("/ingest")
 async def ingest_data(data: dict, user = Depends(get_current_user)):
-    from precognito.ingestion.preprocess import preprocess
-    from precognito.ingestion.heartbeat import update_heartbeat, check_device_status
-    from precognito.ingestion.alerts import check_alerts
+    from precognito.ingestion.core import process_ingestion
 
-    processed = preprocess(data)
     device_id = data.get("device_id")
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id is required")
 
-    update_heartbeat(device_id)
-    status = check_device_status(device_id)
-    alert = check_alerts(processed)
+    result = process_ingestion(device_id, data)
+    
+    if not result:
+        raise HTTPException(status_code=500, detail="Ingestion processing failed")
 
     return {
-        "processed_data": processed,
-        "device_status": status,
-        "alert": alert,
+        **result,
+        "status": "success",
         "user": user["name"]
     }
 
