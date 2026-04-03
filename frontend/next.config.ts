@@ -10,6 +10,31 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === "development",
   workboxOptions: {
     disableDevLogs: true,
+    runtimeCaching: [
+      {
+        urlPattern: /^https:\/\/.*\/manuals\/.*\.pdf$/,
+        handler: "CacheFirst",
+        options: {
+          cacheName: "asset-documentation",
+          expiration: {
+            maxEntries: 50,
+            maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+          },
+        },
+      },
+      {
+        urlPattern: /\/api\/.*/,
+        handler: "NetworkFirst",
+        options: {
+          cacheName: "api-cache",
+          expiration: {
+            maxEntries: 100,
+            maxAgeSeconds: 60 * 60 * 24, // 24 hours
+          },
+          networkTimeoutSeconds: 10,
+        },
+      },
+    ],
   },
 });
 
