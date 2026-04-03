@@ -1,11 +1,15 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from dotenv import load_dotenv
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+load_dotenv()
 
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL is not set")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgres://precognito_user:precognito_password@localhost:5432/precognito")
+
+# SQLAlchemy requires 'postgresql://' instead of 'postgres://' for some drivers
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 engine = create_engine(DATABASE_URL)
 

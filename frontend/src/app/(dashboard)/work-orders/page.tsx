@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { mockAssetDocumentation, mockAuditTrail } from "@/lib/mockData";
-import { DocumentationPanel } from "@/components/dashboard/DocumentationPanel";
+import { mockAssetDocumentation } from "@/lib/mockData";
+import { DocumentationPanel } from "@/components/documentation/DocumentationPanel";
 import { QRScanner } from "@/components/dashboard/QRScanner";
 import { AuditTrailTable } from "@/components/dashboard/AuditTrailTable";
+import { api } from "@/lib/api";
 import Link from "next/link";
 
 type TabType = "docs" | "audit" | "checkin";
@@ -14,21 +15,56 @@ export default function WorkOrdersPage() {
   const [showScanner, setShowScanner] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [checkInStatus, setCheckInStatus] = useState<string | null>(null);
+  const [workOrders, setWorkOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadWorkOrders() {
+      try {
+        const data = await fetch("/api/work-orders").then(res => res.json()).catch(() => []);
+        // If the above fails, we'll try our authenticated lib
+        const realData = await api.fetchWithAuth("/work-orders").catch(() => []);
+        setWorkOrders(realData || []);
+      } catch (err) {
+        console.error("Failed to load work orders", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadWorkOrders();
+  }, []);
 
   const currentDoc = selectedAsset
     ? mockAssetDocumentation.find((d) => d.assetId === selectedAsset)
     : mockAssetDocumentation[0];
 
-  const handleScan = (data: string) => {
+  const handleScan = async (data: string) => {
     setShowScanner(false);
     const assetId = data.toUpperCase();
-    if (assetId.startsWith("ASSET-") || mockAssetDocumentation.some((d) => d.assetId === assetId)) {
+    
+    try {
+      // Record check-in in the database
+      await api.fetchWithAuth("/work-orders/audit/", {
+        method: "POST",
+        body: JSON.stringify({
+          assetId: assetId,
+          status: "CHECK_IN",
+          remarks: "QR Code Scan Verified"
+        })
+      });
+      
       setSelectedAsset(assetId);
       setCheckInStatus(`Validated: ${assetId}`);
-      setTimeout(() => setCheckInStatus(null), 3000);
-    } else {
-      setCheckInStatus(`Unknown asset: ${data}`);
+      
+      // Refresh audit trail
+      const newData = await api.fetchWithAuth("/work-orders").catch(() => []);
+      setWorkOrders(newData);
+      
+    } catch (err) {
+      setCheckInStatus(`Check-in failed: ${assetId}`);
     }
+    
+    setTimeout(() => setCheckInStatus(null), 3000);
   };
 
   const tabs = [
@@ -36,6 +72,8 @@ export default function WorkOrdersPage() {
     { id: "audit" as TabType, label: "Audit Trail" },
     { id: "checkin" as TabType, label: "QR Check-In" },
   ];
+
+  const activeOrdersCount = workOrders.filter((wo) => wo.status !== "COMPLETED").length;
 
   return (
     <div className="space-y-6">
@@ -45,7 +83,7 @@ export default function WorkOrdersPage() {
           <span className="text-[#94a3b8]">
             Active Orders:{" "}
             <span className="text-[#f1f5f9]">
-              {workOrders.filter((wo) => wo.status !== "COMPLETED").length}
+              {activeOrdersCount}
             </span>
           </span>
         </div>
@@ -102,7 +140,16 @@ export default function WorkOrdersPage() {
               Geo-timestamped check-in/check-out logs for ISO compliance
             </p>
           </div>
-          <AuditTrailTable entries={mockAuditTrail} />
+          <AuditTrailTable entries={workOrders.map(wo => ({
+            id: wo.id.toString(),
+            assetId: wo.assetId,
+            assetName: wo.assetId.replace("_", " "),
+            technician: "Current User",
+            action: wo.status,
+            timestamp: wo.timestamp,
+            location: "Main Floor",
+            status: "VERIFIED"
+          }))} />
         </div>
       )}
 
