@@ -6,38 +6,97 @@ import { mockReports, mockHealthTrend } from "@/lib/mockData";
 import { ReportConfigForm } from "@/components/dashboard/ReportConfigForm";
 import { ReportList } from "@/components/dashboard/ReportList";
 import { ReportChart } from "@/components/dashboard/ReportChart";
+import { api } from "@/lib/api";
+import { downloadCSV, downloadPDF } from "@/lib/reporting";
 
 export default function ReportsPage() {
-  const [reports] = useState<Report[]>(mockReports);
+  const [reports, setReports] = useState<Report[]>(mockReports);
   const [showChart, setShowChart] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleGenerate = (config: {
+  const handleGenerate = async (config: {
     type: ReportType;
     category: ReportCategory;
     assets: string[];
     dateRange: { from: string; to: string };
   }) => {
-    console.log("Generating report:", config);
-    setShowChart(true);
+    setIsGenerating(true);
+    
+    // Simulate generation delay
+    setTimeout(() => {
+      const newReport: Report = {
+        id: `REP-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+        name: `${config.category.charAt(0) + config.category.slice(1).toLowerCase()} Report`,
+        type: config.type,
+        category: config.category,
+        assets: config.assets,
+        dateRange: config.dateRange,
+        createdAt: new Date().toISOString(),
+        status: "READY",
+      };
+      
+      setReports([newReport, ...reports]);
+      setShowChart(true);
+      setIsGenerating(false);
+    }, 1500);
+  };
+
+  const handleDownload = async (report: Report) => {
+    let data: any[] = [];
+    
+    try {
+      // Fetch relevant data based on category
+      if (report.category === "COMPLIANCE") {
+        data = await api.getAuditLogs();
+      } else if (report.category === "HEALTH") {
+        data = await api.getAssets();
+      } else if (report.category === "ROI") {
+        const metrics = await api.getModelMetrics();
+        const oee = await api.getOEEMetrics();
+        data = [{ ...metrics, ...oee }];
+      }
+
+      const fileName = `${report.name.toLowerCase().replace(/\s+/g, '-')}-${new Date().getTime()}`;
+
+      if (report.type === "CSV") {
+        downloadCSV(data, fileName);
+      } else {
+        downloadPDF(data, report.name, fileName);
+      }
+    } catch (err) {
+      console.error("Download failed", err);
+      alert("Failed to generate download. Ensure backend is running.");
+    }
   };
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-[#f1f5f9] mb-1">Reports</h1>
-        <p className="text-sm text-[#94a3b8]">Generate and download asset health reports</p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-xl font-semibold text-[#f1f5f9] mb-1">Reports</h1>
+          <p className="text-sm text-[#94a3b8]">Generate and download asset health reports</p>
+        </div>
+        {isGenerating && (
+          <div className="flex items-center gap-2 text-sm text-[#3b82f6]">
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            Generating...
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-[#1e293b] border border-[#334155] rounded-lg p-6">
             <h2 className="text-sm font-medium text-[#f1f5f9] mb-4">Recent Reports</h2>
-            <ReportList reports={reports} />
+            <ReportList reports={reports} onDownload={handleDownload} />
           </div>
 
           {showChart && (
             <div className="bg-[#1e293b] border border-[#334155] rounded-lg p-6">
-              <h2 className="text-sm font-medium text-[#f1f5f9] mb-4">Health Trend</h2>
+              <h2 className="text-sm font-medium text-[#f1f5f9] mb-4">Health Trend Preview</h2>
               <ReportChart data={mockHealthTrend} />
             </div>
           )}

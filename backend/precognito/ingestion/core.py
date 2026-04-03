@@ -2,9 +2,10 @@ import logging
 from precognito.ingestion.preprocess import preprocess
 from precognito.ingestion.heartbeat import update_heartbeat, check_device_status
 from precognito.ingestion.alerts import check_alerts
-from precognito.ingestion.influx_client import save_sensor_data, save_anomaly_result, save_predictive_result
+from precognito.ingestion.influx_client import save_sensor_data, save_anomaly_result, save_predictive_result, check_sustained_thermal
 from precognito.anomaly.core import detect_anomaly
 from precognito.predictive.predictive_engine import predict_rul
+from precognito.notifications import notify_critical_anomaly, notify_safety_alert
 
 logger = logging.getLogger(__name__)
 
@@ -26,20 +27,48 @@ def process_ingestion(device_id: str, raw_data: dict):
     # 3. Detect Anomaly
     anomaly_input = {**processed, "machine_id": device_id}
     anomaly_result = detect_anomaly(anomaly_input)
+    
+    # Trigger external notification if critical
+    if anomaly_result.get("severity") == "CRITICAL" and anomaly_result.get("anomaly_detected"):
+        notify_critical_anomaly(device_id, anomaly_result.get("reason", "Unknown fault detected"))
 
     # 4. Predict RUL
-    # Predictive engine uses specific features mapped in preprocess
     predictive_result = predict_rul(processed)
 
-    # 5. Save to InfluxDB
+    # 5. Thermal Safety Check (US-6.1: T > Baseline for 5+ minutes)
+    is_sustained_thermal = check_sustained_thermal(device_id, threshold=70.0, window="5m")
+    
+    if is_sustained_thermal:
+        notify_safety_alert(device_id, processed.get("temperature", 0.0))
+        
+    safety_alert = {
+        "sustained_thermal": is_sustained_thermal,
+        "current_temp": processed.get("temperature", 0.0),
+        "threshold": 70.0
+    }
+
+    # 6. Save to InfluxDB
     try:
         save_sensor_data(device_id, processed)
         save_anomaly_result(device_id, anomaly_result)
         save_predictive_result(device_id, predictive_result)
+        
+        if is_sustained_thermal:
+            from influxdb_client import Point, WritePrecision
+            from precognito.ingestion.influx_client import write_api, INFLUX_BUCKET, INFLUX_ORG
+            from datetime import datetime
+            point = Point("safety_alerts") \
+                .tag("device_id", device_id) \
+                .tag("type", "sustained_thermal") \
+                .field("temperature", float(processed.get("temperature", 0.0))) \
+                .field("active", True) \
+                .time(datetime.utcnow(), WritePrecision.NS)
+            write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
+            
     except Exception as e:
         logger.error(f"Failed to save to InfluxDB: {e}")
 
-    # 6. Check traditional alerts
+    # 7. Check traditional alerts
     alert = check_alerts(processed)
 
     return {
@@ -48,5 +77,6 @@ def process_ingestion(device_id: str, raw_data: dict):
         "device_status": status,
         "anomaly_analysis": anomaly_result,
         "predictive_analysis": predictive_result,
+        "safety_analysis": safety_alert,
         "alert": alert
     }

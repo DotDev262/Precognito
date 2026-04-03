@@ -4,6 +4,7 @@ import { Report } from "@/lib/types";
 
 interface ReportListProps {
   reports: Report[];
+  onDownload?: (report: Report) => void;
 }
 
 function formatDate(isoString: string): string {
@@ -20,7 +21,7 @@ function getCategoryLabel(category: string): string {
   return labels[category] || category;
 }
 
-export function ReportList({ reports }: ReportListProps) {
+export function ReportList({ reports, onDownload }: ReportListProps) {
   if (reports.length === 0) {
     return (
       <div className="text-center py-12 text-[#94a3b8]">
@@ -51,7 +52,11 @@ export function ReportList({ reports }: ReportListProps) {
             <span className="px-2 py-1 text-xs font-medium bg-[#22c55e]/20 text-[#22c55e] rounded">
               {report.status}
             </span>
-            <button className="p-2 text-[#94a3b8] hover:text-[#f1f5f9] transition-colors">
+            <button 
+              onClick={() => onDownload?.(report)}
+              className="p-2 text-[#94a3b8] hover:text-[#f1f5f9] transition-colors"
+              title="Download Report"
+            >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
