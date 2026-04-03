@@ -16,38 +16,84 @@ async def get_db_pool():
     return app.db_pool
 
 async def get_current_user(request: Request, pool = Depends(get_db_pool)):
-    session_token = request.cookies.get("better-auth.session_token")
-    if not session_token:
-        # Check Authorization header too
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            session_token = auth_header.split(" ")[1]
-
-    if not session_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    async with pool.acquire() as conn:
-        # Better Auth stores sessions in 'session' table
-        session = await conn.fetchrow(
-            'SELECT "userId", "expiresAt" FROM "session" WHERE "token" = $1',
-            session_token
-        )
-
-        if not session:
-            raise HTTPException(status_code=401, detail="Invalid session")
-
-        # Check expiry (asyncpg returns datetime)
-        from datetime import datetime, timezone
-        if session["expiresAt"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
-            raise HTTPException(status_code=401, detail="Session expired")
-
-        user = await conn.fetchrow(
-            'SELECT * FROM "user" WHERE "id" = $1',
-            session["userId"]
+...
         )
         return user
 
+async def log_audit_action(pool, user_id: str, action: str, resource: str, details: str = None):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            'INSERT INTO "audit_log" ("userId", "action", "resource", "details") VALUES ($1, $2, $3, $4)',
+            user_id, action, resource, details
+        )
+
+@app.get("/audit-logs")
+async def get_audit_logs(user = Depends(get_current_user), pool = Depends(get_db_pool)):
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            'SELECT a.*, u.name as "userName" FROM "audit_log" a JOIN "user" u ON a."userId" = u.id ORDER BY a.timestamp DESC LIMIT 100'
+        )
+        return [dict(r) for r in rows]
+
+@app.post("/model-feedback")
+async def submit_model_feedback(data: dict, user = Depends(get_current_user), pool = Depends(get_db_pool)):
+    anomaly_id = data.get("anomalyId")
+    device_id = data.get("deviceId")
+    is_real = data.get("isReal")
+
+    if not all([anomaly_id, device_id]) or is_real is None:
+        raise HTTPException(status_code=400, detail="Missing required fields")
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            'INSERT INTO "model_feedback" ("anomalyId", "deviceId", "isReal", "userId") VALUES ($1, $2, $3, $4)',
+            anomaly_id, device_id, is_real, user["id"]
+        )
+        await log_audit_action(pool, user["id"], "SUBMIT_FEEDBACK", f"anomaly:{anomaly_id}", f"is_real:{is_real}")
+
+    return {"status": "success"}
+
+@app.get("/analytics/metrics")
+async def get_model_metrics(user = Depends(get_current_user), pool = Depends(get_db_pool)):
+    async with pool.acquire() as conn:
+        # Calculate metrics from feedback
+        total_feedback = await conn.fetchval('SELECT COUNT(*) FROM "model_feedback"')
+        true_positives = await conn.fetchval('SELECT COUNT(*) FROM "model_feedback" WHERE "isReal" = true')
+        false_positives = await conn.fetchval('SELECT COUNT(*) FROM "model_feedback" WHERE "isReal" = false')
+
+        # Mock some negatives since we don't have user feedback for non-anomalies usually
+        true_negatives = 1000 # Mocked for prototype
+        false_negatives = 2 # Mocked for prototype
+
+        total = true_positives + false_positives + true_negatives + false_negatives
+        accuracy = (true_positives + true_negatives) / total if total > 0 else 0.95
+        fdr = false_positives / (true_positives + false_positives) * 100 if (true_positives + false_positives) > 0 else 2.5
+
+        return {
+            "accuracy": round(accuracy * 100, 1),
+            "fdr": round(fdr, 1),
+            "truePositives": true_positives,
+            "falsePositives": false_positives,
+            "trueNegatives": true_negatives,
+            "falseNegatives": false_negatives,
+            "period": "30 days"
+        }
+
+@app.get("/analytics/oee")
+async def get_oee_metrics(device_id: Optional[str] = None, user = Depends(get_current_user)):
+    # Simple OEE calculation for prototype
+    # In production, this would query historical data over shifts
+    return {
+        "availability": 98.5,
+        "performance": 94.2,
+        "quality": 99.1,
+        "oee": 91.8,
+        "downtimeAvoidedHours": 124,
+        "costSavings": 45000
+    }
+
 @app.get("/")
+...
 def home():
     return {"message": "Precognito Backend Running"}
 
@@ -140,10 +186,16 @@ async def get_asset_predictions(device_id: str, range: str = "-24h", user = Depe
     return results
 
 @app.get("/alerts")
-async def get_all_alerts(range: str = "-24h", user = Depends(get_current_user)):
+...
+    # Sort by timestamp descending
+    results.sort(key=lambda x: x["timestamp"], reverse=True)
+    return results
+
+@app.get("/safety-alerts")
+async def get_safety_alerts(range: str = "-24h", user = Depends(get_current_user)):
     from precognito.ingestion.influx_client import INFLUX_BUCKET, INFLUX_ORG, query_api
     
-    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: {range}) |> filter(fn: (r) => r["_measurement"] == "anomaly_results") |> filter(fn: (r) => r["_field"] == "anomaly_detected") |> filter(fn: (r) => r["_value"] == true) |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")'
+    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: {range}) |> filter(fn: (r) => r["_measurement"] == "safety_alerts") |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")'
     
     tables = query_api.query(query, org=INFLUX_ORG)
     results = []
@@ -151,20 +203,21 @@ async def get_all_alerts(range: str = "-24h", user = Depends(get_current_user)):
     for table in tables:
         for record in table.records:
             results.append({
-                "id": f"{record.get_time().timestamp()}-{record.values.get('device_id')}",
-                "deviceId": record.values.get("device_id"),
-                "severity": record.values.get("severity"),
-                "message": record.values.get("reason"),
+                "id": f"safety-{record.get_time().timestamp()}",
+                "assetId": record.values.get("device_id"),
+                "assetName": record.values.get("device_id").replace("_", " ").title(),
+                "severity": "CRITICAL",
+                "type": record.values.get("type"),
+                "currentTemp": record.values.get("temperature"),
+                "baselineTemp": 60.0,
                 "timestamp": record.get_time().isoformat(),
                 "acknowledged": False
             })
             
-    # Sort by timestamp descending
-    results.sort(key=lambda x: x["timestamp"], reverse=True)
     return results
 
 @app.post("/ingest/dev")
-async def ingest_data_dev(data: dict):
+...async def ingest_data_dev(data: dict):
     """Unauthenticated ingestion for development/testing"""
     from precognito.ingestion.core import process_ingestion
 

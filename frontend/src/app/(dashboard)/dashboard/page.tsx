@@ -6,22 +6,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Asset } from "@/lib/types";
 import Link from "next/link";
-
-export const rolePermissions: Record<string, string[]> = {
-  ADMIN: ["assets", "alerts", "edge", "reports", "inventory", "work-orders", "executive", "analytics", "ehs", "admin"],
-  MANAGER: ["assets", "reports", "executive", "analytics"],
-  OT_SPECIALIST: ["assets", "alerts", "edge", "ehs"],
-  TECHNICIAN: ["assets", "alerts", "work-orders"],
-  STORE_MANAGER: ["inventory"],
-};
-
-export const roleColors: Record<string, string> = {
-  ADMIN: "#ef4444",
-  MANAGER: "#8b5cf6",
-  OT_SPECIALIST: "#3b82f6",
-  TECHNICIAN: "#22c55e",
-  STORE_MANAGER: "#eab308",
-};
+import { rolePermissions, roleColors, UserRole } from "@/lib/constants";
 
 export default function DashboardPage() {
   const { data: session, isPending } = useSession();

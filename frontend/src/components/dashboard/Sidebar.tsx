@@ -3,17 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
-
-// Define roles and permissions here or import from a shared config
-export type UserRole = "ADMIN" | "MANAGER" | "OT_SPECIALIST" | "TECHNICIAN" | "STORE_MANAGER";
-
-export const rolePermissions: Record<string, string[]> = {
-  ADMIN: ["assets", "alerts", "edge", "reports", "inventory", "work-orders", "executive", "analytics", "ehs", "admin"],
-  MANAGER: ["assets", "reports", "executive", "analytics"],
-  OT_SPECIALIST: ["assets", "alerts", "edge", "ehs"],
-  TECHNICIAN: ["assets", "alerts", "work-orders"],
-  STORE_MANAGER: ["inventory"],
-};
+import { rolePermissions, UserRole } from "@/lib/constants";
 
 const allNavItems = [
   { href: "/dashboard", label: "Dashboard" },

@@ -85,3 +85,22 @@ def get_all_devices(measurement: str = "machine_telemetry"):
         for record in table.records:
             devices.append(record.values.get("device_id"))
     return list(set(devices))
+
+def check_sustained_thermal(device_id: str, threshold: float = 70.0, window: str = "5m"):
+    """
+    Check if temperature has been above threshold for the entire duration of the window.
+    Returns True if all readings in the window are above threshold.
+    """
+    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: -{window}) |> filter(fn: (r) => r["_measurement"] == "machine_telemetry") |> filter(fn: (r) => r["device_id"] == "{device_id}") |> filter(fn: (r) => r["_field"] == "temperature")'
+    tables = query_api.query(query, org=INFLUX_ORG)
+    
+    values = []
+    for table in tables:
+        for record in table.records:
+            values.append(record.get_value())
+            
+    if not values:
+        return False
+        
+    # Check if ALL values in the window are above threshold (sustained)
+    return all(v > threshold for v in values)

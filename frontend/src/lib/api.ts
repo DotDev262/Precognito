@@ -41,4 +41,12 @@ export const api = {
     fetchWithAuth(`/assets/${id}/predictions${range ? `?range=${range}` : ""}`),
   getAlerts: (range?: string) => 
     fetchWithAuth(`/alerts${range ? `?range=${range}` : ""}`),
+  getAuditLogs: () => fetchWithAuth("/audit-logs"),
+  submitModelFeedback: (data: { anomalyId: string, deviceId: string, isReal: boolean }) => 
+    fetchWithAuth("/model-feedback", { method: "POST", body: JSON.stringify(data) }),
+  getModelMetrics: () => fetchWithAuth("/analytics/metrics"),
+  getOEEMetrics: (deviceId?: string) => 
+    fetchWithAuth(`/analytics/oee${deviceId ? `?device_id=${deviceId}` : ""}`),
+  getSafetyAlerts: (range?: string) => 
+    fetchWithAuth(`/safety-alerts${range ? `?range=${range}` : ""}`),
 };
