@@ -1,7 +1,3 @@
-/**
- * @file Asset detail page for viewing telemetry, predictions, and fault analysis for a specific asset.
- */
-
 "use client";
 
 import { useState, useEffect, use } from "react";
@@ -12,16 +8,17 @@ import { AssetDetailHeader } from "@/components/dashboard/AssetDetailHeader";
 import { FFTChart } from "@/components/dashboard/FFTChart";
 import { RULTrendChart } from "@/components/dashboard/RULTrendChart";
 import { FaultBadge } from "@/components/dashboard/FaultBadge";
+import { QRTag } from "@/components/dashboard/QRTag";
 
 interface AssetDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
 /**
- * Renders the asset detail page with real-time telemetry and predictive maintenance data.
+ * @fileoverview Asset Detail Page providing deep-dive analytics for a single machine.
+ * Includes live vibration trends, RUL forecasting, and printable QR identification tags.
  * 
- * @param {AssetDetailPageProps} props The component props.
- * @param {Promise<{id: string}>} props.params The route parameters containing the asset ID.
+ * @param {AssetDetailPageProps} props Component props.
  * @returns {JSX.Element} The rendered asset detail page.
  */
 export default function AssetDetailPage({ params }: AssetDetailPageProps) {
@@ -34,7 +31,7 @@ export default function AssetDetailPage({ params }: AssetDetailPageProps) {
 
   useEffect(() => {
     /**
-     * Loads asset data, telemetry, and predictions from the API.
+     * Loads telemetry and predictive data for the specific asset.
      */
     async function loadData() {
       try {
@@ -85,15 +82,15 @@ export default function AssetDetailPage({ params }: AssetDetailPageProps) {
 
   // Transform data for charts
   const fftData: SensorDataPoint[] = telemetry.map((t, idx) => ({
-    frequency: idx, // Simplified since we don't have real FFT yet
+    frequency: idx, 
     amplitude: t.vibration || 0
-  })).slice(-50); // Last 50 points
+  })).slice(-50); 
 
   const rulTrend: RULTrendPoint[] = predictions.map(p => ({
     date: new Date(p._time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     rul: p.predicted_rul_hours || 0,
     confidence: p.confidence_score_percent || 0
-  })).slice(-20); // Last 20 predictions
+  })).slice(-20); 
 
   const latestPred = predictions[predictions.length - 1];
   const faultPrediction: FaultPrediction | null = latestPred ? {
@@ -105,11 +102,19 @@ export default function AssetDetailPage({ params }: AssetDetailPageProps) {
 
   return (
     <div className="p-6 space-y-6">
-      <AssetDetailHeader asset={asset} />
+      <div className="flex flex-col xl:flex-row gap-6 items-start">
+        <div className="flex-1 w-full">
+          <AssetDetailHeader asset={asset} />
+        </div>
+        <div className="flex-shrink-0 bg-[#1e293b] p-4 rounded-lg border border-[#334155] w-full xl:w-auto flex flex-col items-center">
+          <h3 className="text-xs font-medium text-[#94a3b8] mb-3 uppercase tracking-wider text-center w-full">Physical Asset Tag</h3>
+          <QRTag assetId={asset.id} assetName={asset.name} />
+        </div>
+      </div>
 
       {faultPrediction && (
         <div className="bg-[#1e293b] border border-[#334155] rounded-lg p-6">
-          <h2 className="text-sm font-medium text-[#f1f5f9] mb-3">Fault Prediction</h2>
+          <h2 className="text-sm font-medium text-[#f1f5f9] mb-3">AI Fault Prediction</h2>
           <FaultBadge prediction={faultPrediction} />
         </div>
       )}
