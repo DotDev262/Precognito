@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 # Import routers from other modules
 from precognito.work_orders.api import router as workorder_router
 from precognito.inventory.api import router as inventory_router
+from precognito.financial.routes import router as financial_router
 
 load_dotenv()
 
@@ -129,6 +130,8 @@ store_manager_above = Depends(RoleChecker(["ADMIN", "STORE_MANAGER"]))
 app.include_router(workorder_router)
 # Module 3: Inventory & Supply Chain
 app.include_router(inventory_router)
+# Module 5: Financials & Admin Reporting
+app.include_router(financial_router)
 
 async def log_audit_action(pool, user_id: str, action: str, resource: str, details: str = None):
     """Logs a user action to the audit log table.
@@ -379,7 +382,7 @@ async def get_asset_predictions(device_id: str, range: str = "-24h", user = Depe
     """
     from precognito.ingestion.influx_client import query_historical_data
     
-    tables = query_historical_data(device_id, "predictive_results", range)
+    tables = query_historical_data(device_id, "machine_telemetry", range)
     results = []
     
     for table in tables:
