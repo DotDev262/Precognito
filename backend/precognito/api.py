@@ -2,30 +2,45 @@
 Main FastAPI application entry point for the Precognito backend.
 Coordinates database connections, authentication, auditing, and routing.
 """
-from fastapi import FastAPI, Request, HTTPException, Depends
-from typing import Optional
-import asyncpg
 import os
+import logging
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
-from dotenv import load_dotenv
 
+from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from dotenv import load_dotenv
+import asyncpg
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+from precognito.logging_utils import setup_logging
+# Import dependencies
+from precognito.auth import (
+    get_db_pool, admin_only, lead_above,
+    authenticated_user
+)
 # Import routers from other modules
 from precognito.work_orders.api import router as workorder_router
 from precognito.inventory.api import router as inventory_router
 from precognito.financial.routes import router as financial_router
 
+# Initialize logging before app definition
+setup_logging()
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgres://precognito_user:precognito_password@localhost:5432/precognito")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    logger.error("DATABASE_URL environment variable is not set!")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Context manager for handling application startup and shutdown events.
-
-    Args:
-        app (FastAPI): The FastAPI application instance.
-    """
+    """Context manager for handling application startup and shutdown events."""
     # Startup: Initialize DB Pool
     app.db_pool = await asyncpg.create_pool(DATABASE_URL)
     yield
@@ -33,116 +48,84 @@ async def lifespan(app: FastAPI):
     if hasattr(app, "db_pool"):
         await app.db_pool.close()
 
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(lifespan=lifespan)
 
-async def get_db_pool():
-    """Dependency that returns the global database connection pool.
+# Trust proxy headers
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
-    Returns:
-        asyncpg.Pool: The database connection pool.
-    """
-    return app.db_pool
+# Enforce HTTPS in non-dev environments
+if os.getenv("ENFORCE_HTTPS", "False").lower() == "true":
+    app.add_middleware(HTTPSRedirectMiddleware)
 
-async def get_current_user(request: Request, pool = Depends(get_db_pool)):
-    """Authenticates the user based on session tokens or Bearer tokens.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-    Args:
-        request (Request): The incoming FastAPI request.
-        pool (asyncpg.Pool): Database connection pool dependency.
-
-    Raises:
-        HTTPException: If authentication fails or session is invalid/expired.
-
-    Returns:
-        asyncpg.Record: The authenticated user record.
-    """
-    session_token = request.cookies.get("better-auth.session_token")
-    if not session_token:
-        # Check Authorization header too
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            session_token = auth_header.split(" ")[1]
-            
-    if not session_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    async with pool.acquire() as conn:
-        # Better Auth stores sessions in 'session' table
-        session = await conn.fetchrow(
-            'SELECT "userId", "expiresAt" FROM "session" WHERE "token" = $1',
-            session_token
-        )
-        
-        if not session:
-            raise HTTPException(status_code=401, detail="Invalid session")
-            
-        # Check expiry (asyncpg returns datetime)
-        if session["expiresAt"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
-            raise HTTPException(status_code=401, detail="Session expired")
-            
-        user = await conn.fetchrow(
-            'SELECT * FROM "user" WHERE "id" = $1',
-            session["userId"]
-        )
-        return user
-
-class RoleChecker:
-    """Dependency for performing Role-Based Access Control (RBAC).
-
-    Attributes:
-        allowed_roles (list[str]): List of roles permitted to access the resource.
-    """
-    def __init__(self, allowed_roles: list[str]):
-        """Initializes the RoleChecker with allowed roles.
-
-        Args:
-            allowed_roles (list[str]): Roles that have access.
-        """
-        self.allowed_roles = allowed_roles
-
-    def __call__(self, user = Depends(get_current_user)):
-        """Check if the authenticated user has one of the allowed roles.
-
-        Args:
-            user (asyncpg.Record): The authenticated user.
-
-        Raises:
-            HTTPException: If the user's role is not authorized.
-
-        Returns:
-            asyncpg.Record: The authorized user record.
-        """
-        if user["role"] not in self.allowed_roles:
-            raise HTTPException(
-                status_code=403, 
-                detail=f"Role '{user['role']}' does not have permission to access this resource"
-            )
-        return user
-
-# Role dependencies
-admin_only = Depends(RoleChecker(["ADMIN"]))
-manager_above = Depends(RoleChecker(["ADMIN", "MANAGER"]))
-lead_above = Depends(RoleChecker(["ADMIN", "MANAGER", "OT_SPECIALIST"]))
-store_manager_above = Depends(RoleChecker(["ADMIN", "STORE_MANAGER"]))
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include Routers
-# Module 4: Work Orders
 app.include_router(workorder_router)
-# Module 3: Inventory & Supply Chain
 app.include_router(inventory_router)
-# Module 5: Financials & Admin Reporting
 app.include_router(financial_router)
 
-async def log_audit_action(pool, user_id: str, action: str, resource: str, details: str = None):
-    """Logs a user action to the audit log table.
+@app.get("/health")
+async def health_check(pool = Depends(get_db_pool)):
+    """Health check endpoint for load balancers."""
+    from precognito.ingestion.influx_client import client as influx_client
+    
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "services": {
+            "postgres": "unknown",
+            "influxdb": "unknown"
+        }
+    }
+    
+    # Check Postgres (asyncpg)
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT 1")
+            health_status["services"]["postgres"] = "healthy"
+    except Exception as e:
+        logger.error(f"Postgres health check failed: {e}")
+        health_status["services"]["postgres"] = "unhealthy"
+        health_status["status"] = "degraded"
 
-    Args:
-        pool (asyncpg.Pool): Database connection pool.
-        user_id (str): ID of the user performing the action.
-        action (str): The action performed (e.g., 'SUBMIT_FEEDBACK').
-        resource (str): The resource affected (e.g., 'anomaly:123').
-        details (str, optional): Additional JSON or text details. Defaults to None.
-    """
+    # Check InfluxDB
+    try:
+        if influx_client.ready().status == "ready":
+            health_status["services"]["influxdb"] = "healthy"
+        else:
+            health_status["services"]["influxdb"] = "unhealthy"
+            health_status["status"] = "degraded"
+    except Exception as e:
+        logger.error(f"InfluxDB health check failed: {e}")
+        health_status["services"]["influxdb"] = "unhealthy"
+        health_status["status"] = "degraded"
+
+    if health_status["status"] == "degraded":
+        raise HTTPException(status_code=503, detail=health_status)
+        
+    return health_status
+
+async def log_audit_action(pool, user_id: str, action: str, resource: str, details: str = None):
+    """Logs a user action to the audit log table with basic redaction."""
+    if details:
+        sensitive_keywords = ["password", "token", "secret", "key"]
+        for kw in sensitive_keywords:
+            if kw in details.lower():
+                details = "[REDACTED]"
+                break
+
     async with pool.acquire() as conn:
         await conn.execute(
             'INSERT INTO "audit_log" ("userId", "action", "resource", "details") VALUES ($1, $2, $3, $4)',
@@ -150,37 +133,18 @@ async def log_audit_action(pool, user_id: str, action: str, resource: str, detai
         )
 
 @app.get("/audit-logs")
-async def get_audit_logs(user = admin_only, pool = Depends(get_db_pool)):
-    """API endpoint to retrieve recent audit logs. Restricted to admins.
-
-    Args:
-        user: Authenticated admin user dependency.
-        pool: Database connection pool dependency.
-
-    Returns:
-        list: A list of recent audit log entries with user names.
-    """
+async def get_audit_logs(limit: int = 100, offset: int = 0, user = admin_only, pool = Depends(get_db_pool)):
+    """API endpoint to retrieve recent audit logs. Restricted to admins. Supports pagination."""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            'SELECT a.*, u.name as "userName" FROM "audit_log" a JOIN "user" u ON a."userId" = u.id ORDER BY a.timestamp DESC LIMIT 100'
+            'SELECT * FROM "audit_log" ORDER BY "timestamp" DESC LIMIT $1 OFFSET $2',
+            limit, offset
         )
-        return [dict(r) for r in rows]
+        return [dict(row) for row in rows]
 
-@app.post("/model-feedback")
-async def submit_model_feedback(data: dict, user = Depends(get_current_user), pool = Depends(get_db_pool)):
-    """Submits user feedback regarding the accuracy of an anomaly detection.
-
-    Args:
-        data (dict): Feedback data (anomalyId, deviceId, isReal).
-        user: Authenticated user dependency.
-        pool: Database connection pool dependency.
-
-    Raises:
-        HTTPException: If required fields are missing.
-
-    Returns:
-        dict: Success status.
-    """
+@app.post("/analytics/feedback")
+async def submit_feedback(data: dict, user = authenticated_user, pool = Depends(get_db_pool)):
+    """Receives human feedback (True/False) for an anomaly prediction."""
     anomaly_id = data.get("anomalyId")
     device_id = data.get("deviceId")
     is_real = data.get("isReal")
@@ -199,212 +163,95 @@ async def submit_model_feedback(data: dict, user = Depends(get_current_user), po
 
 @app.get("/analytics/metrics")
 async def get_model_metrics(user = lead_above, pool = Depends(get_db_pool)):
-    """Calculates ML model performance metrics based on user feedback.
-
-    Args:
-        user: Authorized lead user dependency.
-        pool: Database connection pool dependency.
-
-    Returns:
-        dict: Accuracy, FDR, and confusion matrix counts.
-    """
+    """Calculates ML model performance metrics based on user feedback and actual events."""
+    from precognito.ingestion.influx_client import get_total_telemetry_count
+    from precognito.work_orders.database import SessionLocal
+    from precognito.work_orders.models import Audit
+    
     async with pool.acquire() as conn:
-        # Calculate metrics from feedback
-        total_feedback = await conn.fetchval('SELECT COUNT(*) FROM "model_feedback"')
         true_positives = await conn.fetchval('SELECT COUNT(*) FROM "model_feedback" WHERE "isReal" = true')
         false_positives = await conn.fetchval('SELECT COUNT(*) FROM "model_feedback" WHERE "isReal" = false')
-
-        # Mock some negatives since we don't have user feedback for non-anomalies usually
-        true_negatives = 1000 # Mocked for prototype
-        false_negatives = 2 # Mocked for prototype
-
-        total = true_positives + false_positives + true_negatives + false_negatives
-        accuracy = (true_positives + true_negatives) / total if total > 0 else 0.95
-        fdr = false_positives / (true_positives + false_positives) * 100 if (true_positives + false_positives) > 0 else 2.5
-
+        
+        # Calculate True Negatives (Approximation: Total Telemetry - Anomalies)
+        # For a high-frequency system, this will be a large number
+        total_points = get_total_telemetry_count("-30d")
+        # In a real app, we'd subtract total detected anomalies from total points
+        # For now, we use the points as a proxy for 'successful normal operation'
+        true_negatives = max(0, total_points - (true_positives + false_positives))
+        
+        # Calculate False Negatives (Missed detections)
+        # Approximation: Count manual work orders (those not starting with AUTO-GENERATED)
+        db = SessionLocal()
+        try:
+            false_negatives = db.query(Audit).filter(
+                ~Audit.remarks.like("AUTO-GENERATED%")
+            ).count()
+        except Exception:
+            false_negatives = 0
+        finally:
+            db.close()
+        
+        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
+        
         return {
-            "accuracy": round(accuracy * 100, 1),
-            "fdr": round(fdr, 1),
+            "precision": round(precision, 2),
+            "recall": round(recall, 2),
+            "f1Score": round(2 * (precision * recall) / (precision + recall), 2) if (precision + recall) > 0 else 0,
             "truePositives": true_positives,
             "falsePositives": false_positives,
             "trueNegatives": true_negatives,
-            "falseNegatives": false_negatives,
-            "period": "30 days"
+            "falseNegatives": false_negatives
         }
-
-@app.get("/analytics/oee")
-async def get_oee_metrics(device_id: Optional[str] = None, user = manager_above):
-    """Retrieves Overall Equipment Effectiveness (OEE) metrics.
-
-    Args:
-        device_id (str, optional): Filter by specific device.
-        user: Authorized manager dependency.
-
-    Returns:
-        dict: OEE components and calculated values.
-    """
-    # Simple OEE calculation for prototype
-    # In production, this would query historical data over shifts
-    return {
-        "availability": 98.5,
-        "performance": 94.2,
-        "quality": 99.1,
-        "oee": 91.8,
-        "downtimeAvoidedHours": 124,
-        "costSavings": 45000
-    }
-
-@app.get("/")
-def home():
-    """Health check endpoint.
-
-    Returns:
-        dict: Welcome message.
-    """
-    return {"message": "Precognito Backend Running"}
-
-@app.post("/ingest")
-async def ingest_data(data: dict, user = Depends(get_current_user)):
-    """API endpoint for authenticated telemetry ingestion.
-
-    Args:
-        data (dict): Telemetry data.
-        user: Authenticated user dependency.
-
-    Raises:
-        HTTPException: If device_id is missing or ingestion fails.
-
-    Returns:
-        dict: Ingestion result and user information.
-    """
-    from precognito.ingestion.core import process_ingestion
-
-    device_id = data.get("device_id")
-    if not device_id:
-        raise HTTPException(status_code=400, detail="device_id is required")
-
-    result = process_ingestion(device_id, data)
-    
-    if not result:
-        raise HTTPException(status_code=500, detail="Ingestion processing failed")
-
-    return {
-        **result,
-        "status": "success",
-        "user": user["name"]
-    }
 
 @app.get("/assets")
-async def get_assets(user = Depends(get_current_user)):
-    """Retrieves all assets with their latest telemetry and predictive status.
-
-    Args:
-        user: Authenticated user dependency.
-
-    Returns:
-        list: A list of asset objects including health status and RUL.
-    """
-    from precognito.ingestion.influx_client import get_all_devices, query_latest_data
-    
-    device_ids = get_all_devices()
-    assets = []
-    
-    for d_id in device_ids:
-        # Get latest telemetry
-        tel_tables = query_latest_data(d_id, "machine_telemetry")
-        # Get latest prediction
-        pred_tables = query_latest_data(d_id, "predictive_results")
-        
-        asset_info = {
-            "id": d_id,
-            "name": " ".join([s.capitalize() for s in d_id.split("_")]),
-            "status": "GREEN", # Default
-            "rms": 0.0,
-            "rul": 0.0,
-            "lastUpdated": None
-        }
-        
-        if tel_tables:
-            for table in tel_tables:
-                for record in table.records:
-                    if record.get_field() == "vibration_rms":
-                        asset_info["rms"] = record.get_value()
-                    asset_info["lastUpdated"] = record.get_time().isoformat()
-        
-        if pred_tables:
-            for table in pred_tables:
-                for record in table.records:
-                    if record.get_field() == "predicted_rul_hours":
-                        asset_info["rul"] = record.get_value()
-                    if record.get_field() == "risk_level":
-                        risk = record.get_value()
-                        if risk == "High-Risk": asset_info["status"] = "RED"
-                        elif risk == "Warning": asset_info["status"] = "YELLOW"
-        
-        assets.append(asset_info)
-        
-    return assets
-
-@app.get("/assets/{device_id}/telemetry")
-async def get_asset_telemetry(device_id: str, range: str = "-24h", user = Depends(get_current_user)):
-    """Retrieves historical telemetry for a specific asset.
-
-    Args:
-        device_id (str): The ID of the asset.
-        range (str, optional): Time range for history. Defaults to "-24h".
-        user: Authenticated user dependency.
-
-    Returns:
-        list: Historical telemetry records.
-    """
-    from precognito.ingestion.influx_client import query_historical_data
-    
-    tables = query_historical_data(device_id, "machine_telemetry", range)
-    results = []
-    
-    for table in tables:
-        for record in table.records:
-            results.append(record.values)
-            
-    return results
-
-@app.get("/assets/{device_id}/predictions")
-async def get_asset_predictions(device_id: str, range: str = "-24h", user = Depends(get_current_user)):
-    """Retrieves historical predictive results for a specific asset.
-
-    Args:
-        device_id (str): The ID of the asset.
-        range (str, optional): Time range for history. Defaults to "-24h".
-        user: Authenticated user dependency.
-
-    Returns:
-        list: Historical predictive results.
-    """
-    from precognito.ingestion.influx_client import query_historical_data
-    
-    tables = query_historical_data(device_id, "machine_telemetry", range)
-    results = []
-    
-    for table in tables:
-        for record in table.records:
-            results.append(record.values)
-            
-    return results
-
-@app.get("/alerts")
-async def get_all_alerts(range: str = "-24h", user = Depends(get_current_user)):
-    """Retrieves all anomaly alerts within a specific time range.
-
-    Args:
-        range (str, optional): Time range for alerts. Defaults to "-24h".
-        user: Authenticated user dependency.
-
-    Returns:
-        list: A list of detected anomalies.
-    """
+async def get_assets(limit: int = 100, offset: int = 0, user = authenticated_user):
+    """Retrieves all assets with their health status from InfluxDB using optimized queries."""
     from precognito.ingestion.influx_client import INFLUX_BUCKET, INFLUX_ORG, query_api
     
-    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: {range}) |> filter(fn: (r) => r["_measurement"] == "anomaly_results") |> filter(fn: (r) => r["_field"] == "anomaly_detected") |> filter(fn: (r) => r["_value"] == true) |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")'
+    # Note: unique() or group() in Flux can be used for true pagination if device count is huge
+    # For now, we optimize by using a single query and limiting the processing
+    
+    telemetry_query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: -1h) |> filter(fn: (r) => r["_measurement"] == "machine_telemetry") |> last() |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")'
+    telemetry_tables = query_api.query(telemetry_query, org=INFLUX_ORG)
+    
+    risk_query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: -1h) |> filter(fn: (r) => r["_measurement"] == "predictive_results") |> last()'
+    risk_tables = query_api.query(risk_query, org=INFLUX_ORG)
+    
+    risk_map = {}
+    for table in risk_tables:
+        for record in table.records:
+            if record.get_field() == "risk_level":
+                risk_map[record.values.get("device_id")] = record.get_value()
+                
+    all_assets = []
+    for table in telemetry_tables:
+        for record in table.records:
+            d_id = record.values.get("device_id")
+            risk = risk_map.get(d_id, "Normal")
+            
+            status = "GREEN"
+            if risk == "High-Risk":
+                status = "RED"
+            elif risk == "Warning":
+                status = "YELLOW"
+                
+            all_assets.append({
+                "id": d_id,
+                "name": d_id.replace("_", " ").title(),
+                "status": status,
+                "lastUpdate": record.get_time().isoformat()
+            })
+            
+    return all_assets[offset : offset + limit]
+
+@app.get("/anomalies")
+async def get_anomalies(limit: int = 100, offset: int = 0, user = authenticated_user):
+    """Retrieves detected anomalies from InfluxDB. Supports pagination."""
+    from precognito.ingestion.influx_client import INFLUX_BUCKET, INFLUX_ORG, query_api
+    
+    # Use limit and offset directly in Flux for better performance
+    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: -24h) |> filter(fn: (r) => r["_measurement"] == "anomalies") |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value") |> sort(columns: ["_time"], desc: true) |> limit(n: {limit}, offset: {offset})'
     
     tables = query_api.query(query, org=INFLUX_ORG)
     results = []
@@ -419,29 +266,20 @@ async def get_all_alerts(range: str = "-24h", user = Depends(get_current_user)):
                 "timestamp": record.get_time().isoformat(),
                 "acknowledged": False
             })
-            
-    # Sort by timestamp descending
-    results.sort(key=lambda x: x["timestamp"], reverse=True)
+
     return results
 
 @app.get("/safety-alerts")
-async def get_safety_alerts(range: str = "-24h", user = lead_above):
-    """Retrieves all safety alerts (e.g., thermal breaches) within a time range.
-
-    Args:
-        range (str, optional): Time range for alerts. Defaults to "-24h".
-        user: Authorized lead user dependency.
-
-    Returns:
-        list: A list of safety alerts.
-    """
+@limiter.limit("30/minute")
+async def get_safety_alerts(request: Request, limit: int = 100, offset: int = 0, range: str = "-24h", user = lead_above):
+    """Retrieves all safety alerts within a time range. Supports pagination."""
     from precognito.ingestion.influx_client import INFLUX_BUCKET, INFLUX_ORG, query_api
-    
-    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: {range}) |> filter(fn: (r) => r["_measurement"] == "safety_alerts") |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")'
-    
+
+    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: {range}) |> filter(fn: (r) => r["_measurement"] == "safety_alerts") |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value") |> sort(columns: ["_time"], desc: true) |> limit(n: {limit}, offset: {offset})'
+
     tables = query_api.query(query, org=INFLUX_ORG)
     results = []
-    
+
     for table in tables:
         for record in table.records:
             results.append({
@@ -455,22 +293,13 @@ async def get_safety_alerts(range: str = "-24h", user = lead_above):
                 "timestamp": record.get_time().isoformat(),
                 "acknowledged": False
             })
-            
+
     return results
 
 @app.post("/ingest/dev")
-async def ingest_data_dev(data: dict):
-    """Unauthenticated ingestion endpoint for development and testing.
-
-    Args:
-        data (dict): Telemetry data.
-
-    Raises:
-        HTTPException: If device_id is missing or ingestion fails.
-
-    Returns:
-        dict: Ingestion result.
-    """
+@limiter.limit("10/minute")
+async def ingest_data_dev(request: Request, data: dict, user = admin_only):
+    """Authenticated ingestion endpoint for development and testing."""
     from precognito.ingestion.core import process_ingestion
 
     device_id = data.get("device_id")
@@ -478,7 +307,7 @@ async def ingest_data_dev(data: dict):
         raise HTTPException(status_code=400, detail="device_id is required")
 
     result = process_ingestion(device_id, data)
-    
+
     if not result:
         raise HTTPException(status_code=500, detail="Ingestion processing failed")
 
@@ -489,28 +318,30 @@ async def ingest_data_dev(data: dict):
     }
 
 @app.get("/heartbeats")
-async def get_heartbeats(user = lead_above):
-    """Retrieves the last seen status for all devices.
-
-    Args:
-        user: Authorized lead user dependency.
-
-    Returns:
-        list: A list of device status objects including last seen time.
-    """
-    from precognito.ingestion.heartbeat import device_status
+@limiter.limit("60/minute")
+async def get_heartbeats(request: Request, limit: int = 100, offset: int = 0, user = lead_above):
+    """Retrieves the last seen status for all devices from InfluxDB. Supports pagination."""
+    from precognito.ingestion.influx_client import INFLUX_BUCKET, INFLUX_ORG, query_api
+    
+    query = f'from(bucket: "{INFLUX_BUCKET}") |> range(start: -30d) |> filter(fn: (r) => r["_measurement"] == "machine_telemetry") |> last() |> limit(n: {limit}, offset: {offset})'
+    tables = query_api.query(query, org=INFLUX_ORG)
     
     results = []
-    for device_id, last_seen in device_status.items():
-        # Ensure timezone comparison works
-        now = datetime.now(timezone.utc)
-        ls = last_seen.replace(tzinfo=timezone.utc) if last_seen.tzinfo is None else last_seen
-        diff = (now - ls).seconds
-        status = "Active" if diff <= 5 else "Inactive"
-        results.append({
-            "deviceId": device_id,
-            "lastSeen": last_seen.isoformat(),
-            "status": status,
-            "secondsSinceLast": diff
-        })
+    for table in tables:
+        for record in table.records:
+            device_id = record.values.get("device_id")
+            last_seen = record.get_time()
+            
+            now = datetime.now(timezone.utc)
+            ls = last_seen.replace(tzinfo=timezone.utc) if last_seen.tzinfo is None else last_seen
+            diff = (now - ls).total_seconds()
+            
+            status = "Active" if diff <= 15 else "Inactive"
+            
+            results.append({
+                "deviceId": device_id,
+                "lastSeen": last_seen.isoformat(),
+                "status": status,
+                "secondsSinceLast": int(diff)
+            })
     return results

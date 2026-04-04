@@ -80,8 +80,12 @@ def test_get_system_health():
     assert 0 <= health.cpu_usage_percent <= 100
     assert 0 <= health.memory_usage_percent <= 100
 
-def test_generate_audit_report():
+def test_generate_audit_report(mocker):
     """Test generating an audit compliance report."""
+    mock_db = mocker.patch("precognito.financial.services.SessionLocal")
+    mock_session = mock_db.return_value
+    mock_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+    
     service = AdminReportingService()
     start_date = datetime.now(timezone.utc)
     end_date = datetime.now(timezone.utc)

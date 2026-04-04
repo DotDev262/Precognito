@@ -57,14 +57,31 @@ export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
 python3 main.py
 ```
 
-### 3. Frontend Setup
+### 3. Database Migrations
+This project uses **Alembic** for SQLAlchemy schema management.
+
+**Running Migrations:**
+```bash
+cd backend
+export DATABASE_URL="your_database_url"
+uv run alembic upgrade head
+```
+
+**Creating New Migrations:**
+After modifying models in `work_orders/models.py` or `inventory/models.py`:
+```bash
+cd backend
+uv run alembic revision --autogenerate -m "description of changes"
+```
+
+### 4. Frontend Setup
 ```bash
 cd frontend
 bun install
 bun run dev
 ```
 
-### 4. Data Simulation
+### 5. Data Simulation
 ```bash
 # Start sending simulated 1kHz telemetry via MQTT
 python3 backend/precognito/ingestion/simulator.py --mode mqtt
@@ -79,7 +96,7 @@ python3 backend/precognito/ingestion/simulator.py --mode mqtt
 | `predictive` | RUL Estimation (XGBoost) | ✅ Integrated |
 | `work_orders` | Automation & QR Check-in | ✅ Integrated |
 | `inventory` | JIT Procurement & Storage | ✅ Integrated |
-| `financial` | ROI & Cost Estimation | 🚧 In Progress |
+| `financial` | ROI & Cost Estimation | ✅ Integrated |
 
 ## Frontend Role-Based Access
 

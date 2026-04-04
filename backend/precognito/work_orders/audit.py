@@ -1,15 +1,16 @@
 """
 API router for managing audit logs and maintenance records.
 """
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone
 from precognito.work_orders.database import SessionLocal
-from precognito.work_orders.models import Audit, Asset
+from precognito.work_orders.models import Audit
 from precognito.inventory.models import Inventory
+from precognito.auth import manager_above
+from precognito.work_orders.schemas import AuditCreateRequest, WorkOrderCompleteRequest
 
 router = APIRouter(prefix="/audit", tags=["Audit"])
-
 
 def get_db():
     """Dependency to get a SQLAlchemy database session.
@@ -23,30 +24,28 @@ def get_db():
     finally:
         db.close()
 
-
 # CREATE audit log
-@router.post("/")
-def create_audit(data: dict, db: Session = Depends(get_db)):
+@router.post("/", dependencies=[manager_above])
+def create_audit(request: AuditCreateRequest, db: Session = Depends(get_db)):
     """Creates a new audit log entry.
 
     Args:
-        data (dict): Dictionary containing audit details (assetId, status, remarks).
+        request (AuditCreateRequest): Request model containing audit details.
         db (Session): Database session dependency.
 
     Returns:
         Audit: The newly created Audit object.
     """
     audit = Audit(
-        assetId=data["assetId"],
-        status=data["status"],
-        remarks=data.get("remarks"),
-        assignedTo=data.get("assignedTo")
+        assetId=request.assetId,
+        status=request.status,
+        remarks=request.remarks,
+        assignedTo=request.assignedTo
     )
     db.add(audit)
     db.commit()
     db.refresh(audit)
     return audit
-
 
 # GET all audits
 @router.get("/")
@@ -74,13 +73,13 @@ def get_audit_by_asset(asset_id: str, db: Session = Depends(get_db)):
     """
     return db.query(Audit).filter(Audit.assetId == asset_id).all()
 
-@router.patch("/{audit_id}/complete")
-def complete_work_order(audit_id: int, data: dict, db: Session = Depends(get_db)):
+@router.patch("/{audit_id}/complete", dependencies=[manager_above])
+def complete_work_order(audit_id: int, request: WorkOrderCompleteRequest, db: Session = Depends(get_db)):
     """Finalizes a work order, deducting parts and calculating costs.
 
     Args:
         audit_id (int): The ID of the work order to complete.
-        data (dict): Completion details (resolution, partId, quantityUsed, laborHours).
+        request (WorkOrderCompleteRequest): Completion details.
         db (Session): Database session dependency.
 
     Returns:
@@ -90,10 +89,10 @@ def complete_work_order(audit_id: int, data: dict, db: Session = Depends(get_db)
     if not audit:
         raise HTTPException(status_code=404, detail="Work order not found")
     
-    resolution = data.get("resolution", "No notes provided")
-    part_id = data.get("partId")
-    qty = data.get("quantityUsed", 0)
-    labor_hours = data.get("laborHours", 2.0) # Default 2 hours if not specified
+    resolution = request.resolution
+    part_id = request.partId
+    qty = request.quantityUsed
+    labor_hours = request.laborHours
     
     total_parts_cost = 0.0
     

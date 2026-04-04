@@ -11,7 +11,7 @@ import json
 import logging
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 from datetime import datetime
 from collections import defaultdict, deque
 from pathlib import Path
@@ -399,7 +399,7 @@ class AnomalyDetector:
         if pattern_result["anomaly_detected"]:
             reasons.append(pattern_result["reason"])
         if ml_result["anomaly_detected"]:
-            reasons.append(f"Threshold-based detection")
+            reasons.append("Threshold-based detection")
         return "; ".join(reasons) if reasons else "No anomalies detected"
     
     def _error_response(self, data: Dict, timestamp: str, error: str) -> Dict:

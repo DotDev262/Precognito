@@ -3,9 +3,8 @@ Simplified FastAPI router for anomaly detection
 """
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Dict, List, Optional
-from datetime import datetime
 from core import AnomalyDetector
 
 # Create router

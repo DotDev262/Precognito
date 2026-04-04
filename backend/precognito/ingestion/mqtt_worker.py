@@ -13,6 +13,9 @@ load_dotenv()
 # MQTT Configuration
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
+MQTT_USER = os.getenv("MQTT_USER")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
+MQTT_TLS_CERT = os.getenv("MQTT_TLS_CERT")
 MQTT_TOPIC = "telemetry/#"
 
 logging.basicConfig(level=logging.INFO)
@@ -71,6 +74,16 @@ def run_worker():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.on_connect = on_connect
     client.on_message = on_message
+
+    # Set authentication if provided
+    if MQTT_USER and MQTT_PASSWORD:
+        client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+        logger.info("MQTT authentication configured")
+
+    # Set TLS if certificate provided
+    if MQTT_TLS_CERT and os.path.exists(MQTT_TLS_CERT):
+        client.tls_set(ca_certs=MQTT_TLS_CERT)
+        logger.info("MQTT TLS configured")
 
     try:
         client.connect(MQTT_BROKER, MQTT_PORT, 60)

@@ -2,8 +2,6 @@
 Clean up unnecessary files while preserving functionality
 """
 
-import os
-import shutil
 from pathlib import Path
 
 # Files to keep (essential files)
@@ -64,7 +62,7 @@ def cleanup_files():
                 print(f"Unknown: {filename}")
     
     print("="*50)
-    print(f"Cleanup complete!")
+    print("Cleanup complete!")
     print(f"Files removed: {removed_count}")
     print(f"Files kept: {kept_count}")
     

@@ -1,7 +1,7 @@
 """
 SQLAlchemy models for assets, audits, and technician rosters.
 """
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, Text, Numeric
 from precognito.work_orders.database import Base
 from datetime import datetime, timezone
 
@@ -20,6 +20,7 @@ class Asset(Base):
     id = Column(Integer, primary_key=True, index=True)
     assetId = Column(String, unique=True, index=True)
     assetName = Column(String)
+    assetType = Column(String) # e.g., 'pump', 'motor', 'conveyor'
     manual = Column(String)
     mttr = Column(String)
 
@@ -74,3 +75,14 @@ class Roster(Base):
     shift = Column(String) # DAY, NIGHT
     skills = Column(String) # MECHANICAL, ELECTRICAL, GENERAL
     lastAssigned = Column(DateTime)
+
+class AuditLog(Base):
+    """Represents a system-wide audit log entry for user actions."""
+    __tablename__ = "audit_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    userId = Column(String, index=True)
+    action = Column(String)
+    resource = Column(String)
+    details = Column(Text)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))

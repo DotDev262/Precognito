@@ -8,7 +8,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgres://precognito_user:precognito_password@localhost:5432/precognito")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise EnvironmentError("DATABASE_URL environment variable is required")
 
 # SQLAlchemy requires 'postgresql://' instead of 'postgres://' for some drivers
 if DATABASE_URL.startswith("postgres://"):

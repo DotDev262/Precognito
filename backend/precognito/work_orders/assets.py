@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from precognito.work_orders.database import SessionLocal
 from precognito.work_orders.models import Asset
+from precognito.auth import manager_above
+from precognito.work_orders.schemas import AssetCreateRequest
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
-
 
 # DB dependency
 def get_db():
@@ -22,7 +23,6 @@ def get_db():
     finally:
         db.close()
 
-
 # GET all assets
 @router.get("/")
 def get_assets(db: Session = Depends(get_db)):
@@ -36,25 +36,23 @@ def get_assets(db: Session = Depends(get_db)):
     """
     return db.query(Asset).all()
 
-
 # CREATE asset
-@router.post("/")
-def create_asset(data: dict, db: Session = Depends(get_db)):
+@router.post("/", dependencies=[manager_above])
+def create_asset(request: AssetCreateRequest, db: Session = Depends(get_db)):
     """Creates a new asset in the database.
 
     Args:
-        data (dict): Dictionary containing asset details (assetId, assetName, 
-                     manual, mttr).
+        request (AssetCreateRequest): Request model containing asset details.
         db (Session): Database session dependency.
 
     Returns:
         Asset: The newly created Asset object.
     """
     asset = Asset(
-        assetId=data["assetId"],
-        assetName=data["assetName"],
-        manual=data.get("manual"),
-        mttr=data.get("mttr"),
+        assetId=request.assetId,
+        assetName=request.assetName,
+        manual=request.manual,
+        mttr=request.mttr,
     )
     db.add(asset)
     db.commit()

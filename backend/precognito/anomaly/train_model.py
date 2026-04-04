@@ -3,7 +3,6 @@ Train ML anomaly detection model on predictive_maintenance.csv
 """
 
 import pandas as pd
-import numpy as np
 import pickle
 import json
 from sklearn.ensemble import IsolationForest

@@ -1,7 +1,6 @@
 """
 Utility functions for work order management, including automated creation and assignment.
 """
-from sqlalchemy.orm import Session
 from precognito.work_orders.database import SessionLocal
 from precognito.work_orders import models
 from datetime import datetime, timezone

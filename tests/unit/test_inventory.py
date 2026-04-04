@@ -1,5 +1,6 @@
 import pytest
 from precognito.inventory.api import get_inventory, reserve_part, get_jit_procurement_alerts
+from precognito.inventory.schemas import PartReservationRequest
 
 def test_get_inventory(mocker):
     mock_db = mocker.Mock()
@@ -7,9 +8,11 @@ def test_get_inventory(mocker):
         mocker.Mock(id=1, partName="Part A", partNumber="P1", quantity=10, minThreshold=5, leadTimeDays=7, costPerUnit=10.0, category="Bearings"),
         mocker.Mock(id=2, partName="Part B", partNumber="P2", quantity=2, minThreshold=5, leadTimeDays=3, costPerUnit=20.0, category="Belts")
     ]
-    mock_db.query.return_value.all.return_value = mock_items
+    # Handle the .limit().offset().all() chain
+    mock_db.query.return_value.limit.return_value.offset.return_value.all.return_value = mock_items
     
-    result = get_inventory(mock_db)
+    # Pass db as keyword argument to avoid getting assigned to 'limit'
+    result = get_inventory(db=mock_db)
     
     assert len(result) == 2
     assert result[0]["status"] == "IN_STOCK"
@@ -17,12 +20,13 @@ def test_get_inventory(mocker):
 
 def test_reserve_part_insufficient_stock(mocker):
     mock_db = mocker.Mock()
-    mock_part = mocker.Mock(id=1, quantity=2)
+    mock_part = mocker.Mock(id=1, quantity=2, partName="Bearing")
     mock_db.query.return_value.filter.return_value.first.return_value = mock_part
     
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as excinfo:
-        reserve_part({"partId": 1, "quantity": 5}, mock_db)
+        req = PartReservationRequest(partId=1, quantity=5, workOrderId=123)
+        reserve_part(req, mock_db)
     
     assert excinfo.value.status_code == 400
     assert "Insufficient stock" in excinfo.value.detail

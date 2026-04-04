@@ -1,7 +1,5 @@
 /**
- * @fileoverview Authentication page for user login and registration.
- * This module provides the user interface for authenticating with email 
- * and password, and supports role selection for new user creation during the demo.
+ * @fileoverview Authentication page for user login.
  */
 
 "use client";
@@ -9,15 +7,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { signIn, authClient } from "@/lib/auth-client";
-
-const roles = [
-  { value: "ADMIN", label: "Administrator" },
-  { value: "MANAGER", label: "Plant Manager" },
-  { value: "OT_SPECIALIST", label: "OT Specialist" },
-  { value: "TECHNICIAN", label: "Technician" },
-  { value: "STORE_MANAGER", label: "Store Manager" },
-];
+import { signIn } from "@/lib/auth-client";
 
 /**
  * LoginPage component for handling user authentication flows.
@@ -28,7 +18,6 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [selectedRole, setSelectedRole] = useState("ADMIN");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -51,31 +40,25 @@ export default function LoginPage() {
       return;
     }
 
+    const hasNumber = /\d/.test(password);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+    if (!hasNumber || !hasSpecial) {
+      setError("Password must contain at least one number and one special character");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
-    // Try to login first
+    // Try to login
     const { data, error: signInError } = await signIn.email({
       email,
       password,
     });
 
     if (signInError) {
-      // If login fails (user doesn't exist), try signing up (since this is a demo)
-      const { data: signUpData, error: signUpError } = await authClient.signUp.email({
-        email,
-        password,
-        name: email.split("@")[0],
-        // @ts-ignore - custom field
-        role: selectedRole,
-      });
-
-      if (signUpError) {
-        setError(signUpError.message || "Authentication failed");
-        setLoading(false);
-      } else {
-        router.push("/dashboard");
-      }
+      setError(signInError.message || "Authentication failed");
+      setLoading(false);
     } else {
       router.push("/dashboard");
     }
@@ -127,25 +110,6 @@ export default function LoginPage() {
                 className="w-full px-3 py-2 rounded-lg border border-[#334155] text-[#f1f5f9] placeholder-[#64748b] focus:outline-none focus:border-[#3b82f6]"
                 style={{ backgroundColor: "#0f172a" }}
               />
-            </div>
-
-            <div>
-              <label htmlFor="role" className="block text-sm text-[#94a3b8] mb-1">
-                Select Role (for auto-registration)
-              </label>
-              <select
-                id="role"
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[#334155] text-[#f1f5f9] focus:outline-none focus:border-[#3b82f6]"
-                style={{ backgroundColor: "#0f172a" }}
-              >
-                {roles.map((role) => (
-                  <option key={role.value} value={role.value}>
-                    {role.label}
-                  </option>
-                ))}
-              </select>
             </div>
 
             <button

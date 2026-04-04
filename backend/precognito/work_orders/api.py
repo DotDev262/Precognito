@@ -8,7 +8,13 @@ from precognito.work_orders.audit import router as audit_router
 from precognito.work_orders.database import SessionLocal
 from precognito.work_orders import models
 
-router = APIRouter(prefix="/work-orders", tags=["Work Orders"])
+from precognito.auth import authenticated_user
+
+router = APIRouter(
+    prefix="/work-orders", 
+    tags=["Work Orders"],
+    dependencies=[authenticated_user]
+)
 
 # Include assets and audit sub-routers
 router.include_router(assets_router)
@@ -27,15 +33,16 @@ def get_db():
         db.close()
 
 @router.get("/")
-def get_work_orders(db: Session = Depends(get_db)):
-    """Fetches all work orders (audits) from the database with asset metadata.
+def get_work_orders(limit: int = 100, offset: int = 0, db: Session = Depends(get_db)):
+    """Fetches work orders (audits) from the database with asset metadata. Supports pagination.
 
     Args:
+        limit (int): Maximum number of results to return.
+        offset (int): Number of results to skip.
         db (Session): Database session dependency.
 
     Returns:
-        list: A list of dictionaries, each representing a work order with 
-              joined asset information (name, MTTR, manual).
+        list: A list of dictionaries, each representing a work order.
     """
     # Join Audit with Asset to get name and MTTR
     results = db.query(
@@ -46,7 +53,10 @@ def get_work_orders(db: Session = Depends(get_db)):
     ).outerjoin(
         models.Asset, 
         models.Audit.assetId == models.Asset.assetId
-    ).order_by(models.Audit.timestamp.desc()).all()
+    ).order_by(models.Audit.timestamp.desc())\
+     .limit(limit)\
+     .offset(offset)\
+     .all()
     
     # Format into flat dictionary
     output = []

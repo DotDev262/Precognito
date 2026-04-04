@@ -9,7 +9,15 @@ from precognito.work_orders.database import SessionLocal
 from precognito.inventory import models
 from precognito.ingestion.influx_client import query_latest_data
 
-router = APIRouter(prefix="/inventory", tags=["Inventory"])
+from precognito.auth import authenticated_user, store_manager_above
+
+from precognito.inventory.schemas import PartReservationRequest, PurchaseOrderRequest
+
+router = APIRouter(
+    prefix="/inventory", 
+    tags=["Inventory"],
+    dependencies=[authenticated_user]
+)
 
 def get_db():
     """Dependency to get a SQLAlchemy database session.
@@ -24,16 +32,18 @@ def get_db():
         db.close()
 
 @router.get("/", response_model=List[dict])
-def get_inventory(db: Session = Depends(get_db)):
-    """Retrieves all inventory items with their current status.
+def get_inventory(limit: int = 100, offset: int = 0, db: Session = Depends(get_db)):
+    """Retrieves inventory items with their current status. Supports pagination.
 
     Args:
+        limit (int): Maximum number of results to return.
+        offset (int): Number of results to skip.
         db (Session): Database session dependency.
 
     Returns:
         list: A list of dictionaries containing part details and stock status.
     """
-    items = db.query(models.Inventory).all()
+    items = db.query(models.Inventory).limit(limit).offset(offset).all()
     return [
         {
             "id": i.id,
@@ -48,12 +58,12 @@ def get_inventory(db: Session = Depends(get_db)):
         } for i in items
     ]
 
-@router.post("/reserve")
-def reserve_part(data: dict, db: Session = Depends(get_db)):
+@router.post("/reserve", dependencies=[store_manager_above])
+def reserve_part(request: PartReservationRequest, db: Session = Depends(get_db)):
     """Reserves a specific quantity of a part for a work order.
 
     Args:
-        data (dict): Dictionary containing partId, quantity, and workOrderId.
+        request (PartReservationRequest): Request model containing partId, quantity, and workOrderId.
         db (Session): Database session dependency.
 
     Raises:
@@ -62,9 +72,9 @@ def reserve_part(data: dict, db: Session = Depends(get_db)):
     Returns:
         dict: Status and the ID of the created reservation.
     """
-    part_id = data.get("partId")
-    quantity = data.get("quantity", 1)
-    work_order_id = data.get("workOrderId")
+    part_id = request.partId
+    quantity = request.quantity
+    work_order_id = request.workOrderId
     
     part = db.query(models.Inventory).filter(models.Inventory.id == part_id).first()
     if not part or part.quantity < quantity:
@@ -80,12 +90,12 @@ def reserve_part(data: dict, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "reserved", "reservationId": res.id}
 
-@router.post("/purchase-order")
-def create_purchase_order(data: dict, db: Session = Depends(get_db)):
+@router.post("/purchase-order", dependencies=[store_manager_above])
+def create_purchase_order(request: PurchaseOrderRequest, db: Session = Depends(get_db)):
     """Generates an automated purchase order for a part.
 
     Args:
-        data (dict): Dictionary containing partId and quantity.
+        request (PurchaseOrderRequest): Request model containing partId and quantity.
         db (Session): Database session dependency.
 
     Raises:
@@ -94,8 +104,8 @@ def create_purchase_order(data: dict, db: Session = Depends(get_db)):
     Returns:
         dict: Generated PO details including PO number and expected delivery.
     """
-    part_id = data.get("partId")
-    quantity = data.get("quantity", 10) # Bulk order
+    part_id = request.partId
+    quantity = request.quantity
     
     part = db.query(models.Inventory).filter(models.Inventory.id == part_id).first()
     if not part:
@@ -125,11 +135,25 @@ def get_jit_procurement_alerts(db: Session = Depends(get_db)):
         list: A list of JIT procurement alerts for all monitored assets.
     """
     from precognito.ingestion.influx_client import get_all_devices
+    from precognito.work_orders.models import Asset
+    
+    # Asset type to part category mapping
+    PART_MAPPING = {
+        "pump": "Seal Kits",
+        "motor": "Bearings",
+        "conveyor": "Belts",
+        "fan": "Filters"
+    }
     
     device_ids = get_all_devices()
     alerts = []
     
     for d_id in device_ids:
+        # Fetch asset type from Postgres
+        asset = db.query(Asset).filter(Asset.assetId == d_id).first()
+        asset_type = asset.assetType.lower() if asset and asset.assetType else "motor" # Default to motor
+        required_category = PART_MAPPING.get(asset_type, "Bearings")
+
         pred_tables = query_latest_data(d_id, "predictive_results")
         rul_hours = 0.0
         
@@ -140,22 +164,23 @@ def get_jit_procurement_alerts(db: Session = Depends(get_db)):
                         rul_hours = record.get_value()
         
         # Check against inventory parts needed for this asset type
-        # For prototype, we'll assume every asset needs 'Bearings' (Lead time 7 days = 168h)
-        bearing_part = db.query(models.Inventory).filter(models.Inventory.category == "Bearings").first()
+        target_part = db.query(models.Inventory).filter(
+            models.Inventory.category == required_category
+        ).first()
         
-        if bearing_part:
-            lead_time_hours = bearing_part.leadTimeDays * 24
+        if target_part:
+            lead_time_hours = target_part.leadTimeDays * 24
             # Buffer 10% as per US-3.1
             threshold = lead_time_hours * 1.1
             
             if rul_hours < threshold:
                 alerts.append({
                     "deviceId": d_id,
-                    "partName": bearing_part.partName,
+                    "partName": target_part.partName,
                     "rulHours": round(rul_hours, 1),
                     "leadTimeHours": lead_time_hours,
                     "priority": "CRITICAL" if rul_hours < lead_time_hours else "HIGH",
-                    "message": f"Procure {bearing_part.partName} immediately. RUL ({round(rul_hours, 1)}h) is nearing lead time ({lead_time_hours}h)."
+                    "message": f"Procure {target_part.partName} immediately. RUL ({round(rul_hours, 1)}h) is nearing lead time ({lead_time_hours}h)."
                 })
                 
     return alerts

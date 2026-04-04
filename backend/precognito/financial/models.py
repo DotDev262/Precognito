@@ -5,7 +5,7 @@ system health monitoring, and audit compliance reporting.
 """
 
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
 from datetime import datetime
 
 class EngineRecommendationRow(BaseModel):

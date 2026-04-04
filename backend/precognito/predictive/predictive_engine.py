@@ -1,7 +1,6 @@
 """
 Predictive maintenance engine for RUL and fault type prediction.
 """
-import os
 import joblib
 import pandas as pd
 import numpy as np

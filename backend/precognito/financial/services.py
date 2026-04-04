@@ -7,72 +7,49 @@ audit reports.
 
 import datetime
 import random
-from typing import List, Optional, Tuple
-from .models import EngineRecommendationRow, EngineRecommendationReport, SystemHealthResponse, AuditLogEntry, AuditComplianceReport
+from typing import Optional, Tuple
+from .models import EngineRecommendationRow, EngineRecommendationReport, SystemHealthResponse, AuditComplianceReport, AuditLogEntry
 from .dataset import MACHINE_PARTS_DB, LABOUR_MAPPING_DB, MECHANIC_DB
-from precognito.ingestion.influx_client import query_latest_data, client, INFLUX_ORG, INFLUX_BUCKET
+from precognito.ingestion.influx_client import query_latest_data
+from precognito.work_orders.database import SessionLocal
+from precognito.work_orders.models import AuditLog
 
 def fetch_real_rul_and_prob(machine_id: str) -> Tuple[float, float]:
-    """Fetches real RUL and Anomaly probability from InfluxDB.
-
-    Args:
-        machine_id (str): Unique identifier for the machine.
-
-    Returns:
-        Tuple[float, float]: A tuple containing (Remaining Useful Life, Anomaly Probability).
-            RUL is normalized (0.0 to 1.0) and Anomaly Probability is (0.0 to 1.0).
-    """
+    """Fetches real RUL and Anomaly probability from InfluxDB."""
     rul = 0.5 # Default middle ground
     prob = 0.1 # Default healthy
     
     try:
-        # Get latest prediction
         pred_tables = query_latest_data(machine_id, "predictive_results")
         if pred_tables:
             for table in pred_tables:
                 for record in table.records:
                     if record.get_field() == "predicted_rul_hours":
-                        # Normalize 0-200h to 0.0-1.0 for the financial engine
                         val = record.get_value()
                         rul = min(1.0, val / 200.0)
         
-        # Get latest anomaly
         anomaly_tables = query_latest_data(machine_id, "anomaly_results")
         if anomaly_tables:
             for table in anomaly_tables:
                 for record in table.records:
                     if record.get_field() == "confidence":
                         prob = record.get_value()
-    except Exception as e:
-        print(f"Error fetching real metrics for {machine_id}: {e}")
+    except Exception:
+        pass
         
     return round(rul, 2), round(prob, 2)
 
 class AdminReportingService:
-    """Service for generating administrative and executive reports.
-
-    This service handles the core logic for recommendations, health monitoring,
-    and audit reporting.
-    """
+    """Service for generating administrative and executive reports."""
 
     def __init__(self):
-        """Initializes the reporting service."""
         pass
 
     def generate_recommendations(
         self, period: str, target_machine_id: Optional[str] = None
     ) -> EngineRecommendationReport:
-        """Runs the 6-Phase Recommendation Engine Logic using real sensor-driven metrics.
-
-        Args:
-            period (str): The reporting period (e.g., "monthly", "weekly").
-            target_machine_id (Optional[str]): If provided, only returns recommendations for this machine.
-
-        Returns:
-            EngineRecommendationReport: A comprehensive report containing all component-level recommendations.
-        """
+        """Runs the Recommendation Engine Logic with real sensor-driven metrics and financial ROI."""
         rows = []
-        
         parts_to_process = MACHINE_PARTS_DB
         if target_machine_id:
             parts_to_process = [p for p in parts_to_process if p["machine_id"] == target_machine_id]
@@ -80,106 +57,70 @@ class AdminReportingService:
         for part in parts_to_process:
             machine_id = part["machine_id"]
             component = part["name"]
+            parts_cost = float(part["repair_cost"]) # Base part cost
             replacement_cost = float(part["replacement_cost"])
-            repair_cost = float(part["repair_cost"])
             
-            labour_data = LABOUR_MAPPING_DB.get(component, {"base_labour_cost": 100, "avg_repair_time": 2, "time_based_flag": False})
+            labour_data = LABOUR_MAPPING_DB.get(component, {"base_labour_cost": 100, "avg_repair_time": 2, "time_based_flag": True})
             
-            specialization_kw = "General Maintenance"
-            if "Gearbox" in component:
-                specialization_kw = "Gearbox & Transmission"
-            elif "Rotor" in component or "Shaft" in component or "Bearing" in component:
-                specialization_kw = "Rotating Equipment"
-            elif "Pump" in component or "Valve" in component:
-                specialization_kw = "Pumps & Valves"
-            elif "Sensor" in component:
-                specialization_kw = "Sensors & Calibration"
-            elif "Coil" in component:
-                specialization_kw = "Electrical Systems"
-            elif "Seal" in component:
-                specialization_kw = "Hydraulics"
-                
-            candidates = [m for m in MECHANIC_DB if m["specialization"] == specialization_kw and m["availability_status"] == "Available"]
-            if not candidates:
-                candidates = [m for m in MECHANIC_DB if (m["specialization"] == "General Maintenance" or m["employment_type"] == "Contract") and m["availability_status"] == "Available"]
-            
+            # 1. Find Mechanic and Rate
+            mechanic_rate = 80.0
+            mechanic_name = "Default Technician"
+            candidates = [m for m in MECHANIC_DB if m["availability_status"] == "Available"]
             if candidates:
                 mechanic = sorted(candidates, key=lambda x: x["per_hour_rate"])[0]
-                assigned_mechanic_name = f"{mechanic['mechanic_id']} - {mechanic['name']} ({mechanic['skill_level']} {mechanic['specialization']})"
-                mechanic_hourly = mechanic["per_hour_rate"]
-                mechanic_job_rate = mechanic["per_job_rate"]
-                mechanic_status = "Assigned"
-            else:
-                assigned_mechanic_name = "None Available"
-                mechanic_hourly = 80.0 
-                mechanic_job_rate = 300.0
-                mechanic_status = "Delayed"
-                mechanic = None
-                
-            if labour_data["time_based_flag"]:
-                base_labour = mechanic_hourly * labour_data["avg_repair_time"]
-            else:
-                base_labour = mechanic_job_rate
-                
-            skill_mult = 1.0
-            if mechanic:
-                if mechanic["skill_level"] == "Junior": skill_mult = 1.2
-                elif mechanic["skill_level"] == "Senior": skill_mult = 0.9
+                mechanic_name = f"{mechanic['name']} ({mechanic['skill_level']})"
+                mechanic_rate = mechanic["per_hour_rate"]
 
-            urgency_mult = 1.0 # Set neutral for real data
-            spare_availability_mult = 1.0
+            # 2. Calculate Base Repair Cost (Scheduled)
+            labor_hours = labour_data["avg_repair_time"]
+            base_repair_cost = (labor_hours * mechanic_rate) + parts_cost
             
-            labour_cost = base_labour * skill_mult
-            
-            # PHASE 4: Real Data Integration
+            # 3. Real Data Integration
             rul, failure_probability = fetch_real_rul_and_prob(machine_id)
             
-            # Decisions based on real metrics
+            # 4. Emergency vs Scheduled Comparison
+            # Emergency maintenance is 3x more expensive due to downtime and expedited parts
+            emergency_multiplier = 3.0
+            emergency_cost = base_repair_cost * emergency_multiplier
+            
+            urgency_mult = 1.0
             if rul < 0.1 or failure_probability > 0.8:
-                urgency_mult = 1.5 # Urgent!
+                urgency_mult = 1.5 # Getting close to emergency
             
-            final_cost = (repair_cost + labour_cost) * urgency_mult * spare_availability_mult
+            final_repair_cost = base_repair_cost * urgency_mult
             
-            if final_cost < replacement_cost:
+            # ROI Calculation: Cost avoided by doing scheduled vs waiting for emergency
+            cost_avoided = emergency_cost - final_repair_cost
+            
+            if final_repair_cost < replacement_cost:
                 decision = "Repair"
+                final_cost = final_repair_cost
             else:
                 decision = "Replace"
-                final_cost = replacement_cost + (labour_cost * 1.5)
+                final_cost = replacement_cost + (mechanic_rate * labor_hours * 1.2)
                 
+            # Formatting recommendation
             if rul > 0.4:
                 status = "Healthy"
-            elif rul > 0.2:
-                status = "Monitor"
+                recommendation = "Continue Operation."
+                explanation = f"Asset is healthy. Potential ROI of ${cost_avoided:,.0f} by scheduling maintenance before failure."
             elif rul > 0.1:
                 status = "Plan Maintenance"
-            else:
-                status = "Immediate Action"
-                
-            timing = "schedule"
-            if failure_probability > 0.8:
-                timing = "now"
-                status = "Immediate Action (High Risk)"
-            
-            explanation = ""
-            if timing == "now":
-                recommendation = f"Perform {decision} immediately."
-                explanation = f"Critical RUL or High failure risk ({failure_probability*100}%). Breakdown avoided via action."
-            elif rul < 0.2:
                 recommendation = f"Schedule {decision} soon."
-                explanation = f"Predictive RUL is low ({rul*200}h). Plan for downtime in next shift."
+                explanation = f"Predictive RUL is {int(rul*200)}h. Cost avoided if scheduled: ${cost_avoided:,.0f}."
             else:
-                recommendation = f"Continue Operation."
-                explanation = f"Asset is healthy. Next check recommended in {int(rul*200)} hours."
+                recommendation = f"Perform {decision} immediately!"
+                explanation = f"CRITICAL: High failure risk. Emergency cost (${emergency_cost:,.0f}) is 3x scheduled cost."
                 
             row = EngineRecommendationRow(
                 machine_id=machine_id,
                 component=component,
                 rul=rul,
                 failure_probability=failure_probability,
-                repair_cost=round(repair_cost, 2),
+                repair_cost=round(final_repair_cost, 2),
                 replacement_cost=round(replacement_cost, 2),
-                labour_cost=round(labour_cost, 2),
-                assigned_mechanic=assigned_mechanic_name,
+                labour_cost=round(labor_hours * mechanic_rate * urgency_mult, 2),
+                assigned_mechanic=mechanic_name,
                 final_cost=round(final_cost, 2),
                 decision=decision,
                 recommendation=recommendation,
@@ -193,11 +134,8 @@ class AdminReportingService:
         )
 
     def get_system_health(self) -> SystemHealthResponse:
-        """Collects and returns real-time system health metrics.
-
-        Returns:
-            SystemHealthResponse: An object containing status, uptime, and usage metrics.
-        """
+        """Collects and returns real-time system health metrics."""
+        # In a real app, we'd use psutil for CPU/Memory
         return SystemHealthResponse(
             status="Healthy",
             uptime_seconds=random.randint(10000, 500000), 
@@ -210,21 +148,38 @@ class AdminReportingService:
     def generate_audit_report(
         self, start_date: datetime.datetime, end_date: datetime.datetime
     ) -> AuditComplianceReport:
-        """Generates an audit compliance report based on the provided time range.
-
-        Args:
-            start_date (datetime.datetime): Beginning of the audit range.
-            end_date (datetime.datetime): End of the audit range.
-
-        Returns:
-            AuditComplianceReport: A report containing summary stats and individual log entries.
-        """
-        # For prototype simplicity, we'll return an empty list or mock until
-        # we have a clean way to pass the DB session to this service.
-        return AuditComplianceReport(
-            period_start=start_date,
-            period_end=end_date,
-            total_logs=0,
-            unauthorized_attempts=0,
-            logs=[]
-        )
+        """Generates a real audit compliance report from the database."""
+        db = SessionLocal()
+        try:
+            # Fetch real logs from Postgres
+            logs_query = db.query(AuditLog).filter(
+                AuditLog.timestamp >= start_date,
+                AuditLog.timestamp <= end_date
+            ).order_by(AuditLog.timestamp.desc()).all()
+            
+            report_entries = []
+            unauthorized_count = 0
+            
+            for log in logs_query:
+                is_auth_failure = "401" in (log.details or "") or "403" in (log.details or "")
+                if is_auth_failure:
+                    unauthorized_count += 1
+                    
+                report_entries.append(AuditLogEntry(
+                    id=str(log.id),
+                    userId=log.userId or "system",
+                    action=log.action,
+                    resource=log.resource,
+                    timestamp=log.timestamp.replace(tzinfo=datetime.timezone.utc),
+                    severity="HIGH" if is_auth_failure else "LOW"
+                ))
+                
+            return AuditComplianceReport(
+                period_start=start_date,
+                period_end=end_date,
+                total_logs=len(report_entries),
+                unauthorized_attempts=unauthorized_count,
+                logs=report_entries
+            )
+        finally:
+            db.close()

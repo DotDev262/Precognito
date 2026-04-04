@@ -1,6 +1,6 @@
 import pytest
 from fastapi import HTTPException
-from precognito.api import RoleChecker
+from precognito.auth import RoleChecker
 
 def test_role_checker_allow():
     checker = RoleChecker(["ADMIN", "MANAGER"])
