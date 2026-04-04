@@ -1,0 +1,86 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Visual Snapshots > AssetCard should match snapshot 1`] = `
+<DocumentFragment>
+  <a
+    class="block p-4 border border-[#334155] rounded-lg bg-[#1e293b] hover:bg-[#334155] transition-colors"
+    href="/assets/motor_1"
+  >
+    <div
+      class="flex items-start justify-between mb-3"
+    >
+      <div>
+        <h3
+          class="font-medium text-[#f1f5f9]"
+        >
+          Motor 1
+        </h3>
+        <p
+          class="text-sm text-[#94a3b8]"
+        >
+          motor
+        </p>
+      </div>
+      <span
+        class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-[#22c55e] text-white"
+      >
+        <span
+          class="w-1.5 h-1.5 rounded-full bg-white"
+        />
+        Healthy
+      </span>
+    </div>
+    <div
+      class="space-y-2 text-sm"
+    >
+      <div
+        class="flex justify-between"
+      >
+        <span
+          class="text-[#94a3b8]"
+        >
+          Location
+        </span>
+        <span
+          class="text-[#f1f5f9]"
+        >
+          Factory Floor A
+        </span>
+      </div>
+      <div
+        class="flex justify-between"
+      >
+        <span
+          class="text-[#94a3b8]"
+        >
+          RMS
+        </span>
+        <span
+          class="text-[#f1f5f9]"
+        >
+          0.05 mm/s
+        </span>
+      </div>
+      <div
+        class="flex justify-between"
+      >
+        <span
+          class="text-[#94a3b8]"
+        >
+          RUL
+        </span>
+        <span
+          class="text-[#f1f5f9]"
+        >
+          150 hrs
+        </span>
+      </div>
+    </div>
+    <p
+      class="mt-3 text-xs text-[#94a3b8]"
+    >
+      No data yet
+    </p>
+  </a>
+</DocumentFragment>
+`;
