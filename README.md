@@ -43,25 +43,38 @@ docker compose up --build -d
 - **API Docs**: `http://localhost:8000/docs`
 - **InfluxDB**: `http://localhost:8086`
 
-### 2. Manual Backend Setup (Development)
+### 2. Initial User Setup
+To create test accounts for all roles (Admin, Manager, Tech, etc.), run the following command:
 ```bash
-uv sync --all-extras
+cd frontend
+bun scripts/seed-all-users.ts
+```
+*Note: Default password for all seeded users is `Password123!`*
+
+### 3. Manual Backend Setup (Development)
+```bash
+uv sync
 # Run unified server (API + MQTT Worker)
-export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
-python3 main.py
+uv run python main.py
 ```
 
-### 3. Manual Frontend Setup (Development)
+### 4. Manual Frontend Setup (Development)
 ```bash
 cd frontend
 bun install
-bun run dev
+bun run dev:lite
 ```
 
-### 4. Database Migrations
+### 5. Database Migrations
 ```bash
 cd backend
 uv run alembic upgrade head
+```
+
+### 6. Data Simulation
+To generate live telemetry data for the dashboard, run the simulator in a separate terminal:
+```bash
+uv run python backend/precognito/ingestion/simulator.py
 ```
 
 ## 🧪 Comprehensive Testing Suite
