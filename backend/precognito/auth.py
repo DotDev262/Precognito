@@ -50,14 +50,19 @@ async def get_current_user(request: Request, pool: asyncpg.Pool = Depends(get_db
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     async with pool.acquire() as conn:
-        # Use unquoted table name and explicit column selection.
-        # We check both token and id.
-        query = 'SELECT "userId", "expiresAt", token FROM session WHERE token = $1 OR id = $1'
-        session = await conn.fetchrow(query, session_token)
+        # Debug: Confirm DB name
+        db_name = await conn.fetchval("SELECT current_database()")
+        logger.info(f"Connected to DB: {db_name}")
+        
+        # Greedy query to handle potential CHAR padding or case mismatches
+        query = 'SELECT "userId", "expiresAt", token FROM session WHERE TRIM(token) = $1 OR token ILIKE $1 OR TRIM(id) = $1'
+        session = await conn.fetchrow(query, session_token.strip())
         
         if not session:
-            # Fallback: check if the token might be stored hashed (though unlikely based on logs)
-            logger.warning(f"Session not found for token: {session_token[:8]}...")
+            # Last ditch: check if token matches any token in the DB via partial match for debugging
+            all_t = await conn.fetch("SELECT token FROM session LIMIT 5")
+            logger.warning(f"Received token: '{session_token}' (len {len(session_token)})")
+            logger.warning(f"Tokens in DB: {[f\"'{t['token']}' (len {len(t['token'])})\" for t in all_t]}")
             raise HTTPException(status_code=401, detail="Invalid session")
             
         # Robust expiry check
