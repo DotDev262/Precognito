@@ -355,6 +355,12 @@ async def get_anomalies(limit: int = 100, offset: int = 0, user = authenticated_
 
     return results
 
+# Alias for /alerts
+@app.get("/alerts")
+async def get_alerts_alias(limit: int = 100, offset: int = 0, user = authenticated_user):
+    """Alias for /anomalies to support the frontend's expected endpoint."""
+    return await get_anomalies(limit, offset, user)
+
 @app.get("/safety-alerts")
 @limiter.limit("30/minute")
 async def get_safety_alerts(request: Request, limit: int = 100, offset: int = 0, range: str = "-24h", user = lead_above):

@@ -35,6 +35,10 @@ async def get_current_user(request: Request, pool: asyncpg.Pool = Depends(get_db
     """
     session_token = request.cookies.get("better-auth.session_token") or \
                     request.cookies.get("__better-auth-session-token")
+    
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if not session_token:
         # Check Authorization header too
         auth_header = request.headers.get("Authorization")
@@ -42,18 +46,17 @@ async def get_current_user(request: Request, pool: asyncpg.Pool = Depends(get_db
             session_token = auth_header.split(" ")[1]
             
     if not session_token:
+        logger.warning("No session token found in cookies or headers")
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     async with pool.acquire() as conn:
-        # Fetch session - Issue 12: Timing attacks. 
-        # In a real app, we'd hash the token before storing/querying.
-        # For now, we fetch and could use secrets.compare_digest if we had a non-token identifier.
         session = await conn.fetchrow(
             'SELECT "userId", "expiresAt", "token" FROM "session" WHERE "token" = $1',
             session_token
         )
         
         if not session:
+            logger.warning(f"Invalid session token (not found in DB): {session_token[:8]}...")
             raise HTTPException(status_code=401, detail="Invalid session")
             
         # Timing safe comparison (redundant here as DB already matched, but good practice)
