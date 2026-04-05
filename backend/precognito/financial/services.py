@@ -8,7 +8,7 @@ audit reports.
 import datetime
 import random
 from typing import Optional, Tuple
-from .models import EngineRecommendationRow, EngineRecommendationReport, SystemHealthResponse, AuditComplianceReport, AuditLogEntry
+from .models import EngineRecommendationRow, EngineRecommendationReport, SystemHealthResponse, AuditComplianceReport, AuditLogEntry, OEEMetricsResponse
 from .dataset import MACHINE_PARTS_DB, LABOUR_MAPPING_DB, MECHANIC_DB
 from precognito.ingestion.influx_client import query_latest_data
 from precognito.work_orders.database import SessionLocal
@@ -129,6 +129,31 @@ class AdminReportingService:
         return EngineRecommendationReport(
             report_period=period,
             recommendations=rows
+        )
+
+    def get_oee_metrics(self, device_id: Optional[str] = None) -> OEEMetricsResponse:
+        """Calculates Overall Equipment Effectiveness (OEE) metrics.
+
+        Args:
+            device_id: Optional ID of a specific device to calculate OEE for.
+
+        Returns:
+            OEEMetricsResponse: The calculated OEE metrics.
+        """
+        # In a real industrial scenario, OEE = Availability * Performance * Quality
+        # Here we simulate these based on our predictive data or random ranges
+        availability = round(random.uniform(85.0, 98.0), 1)
+        performance = round(random.uniform(90.0, 99.0), 1)
+        quality = round(random.uniform(98.0, 99.9), 1)
+        oee = round((availability / 100) * (performance / 100) * (quality / 100) * 100, 1)
+
+        return OEEMetricsResponse(
+            oee=oee,
+            availability=availability,
+            performance=performance,
+            quality=quality,
+            downtimeAvoidedHours=round(random.uniform(10.0, 50.0), 1),
+            costSavings=round(random.uniform(5000.0, 25000.0), 2)
         )
 
     def get_system_health(self) -> SystemHealthResponse:

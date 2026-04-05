@@ -101,3 +101,21 @@ class AuditComplianceReport(BaseModel):
     total_logs: int
     unauthorized_attempts: int
     logs: List[AuditLogEntry]
+
+class OEEMetricsResponse(BaseModel):
+    """Overall Equipment Effectiveness (OEE) metrics for an asset or facility.
+
+    Attributes:
+        oee (float): Overall score (0-100).
+        availability (float): Availability score (0-100).
+        performance (float): Performance score (0-100).
+        quality (float): Quality score (0-100).
+        downtimeAvoidedHours (float): Estimated hours of downtime saved.
+        costSavings (float): Estimated ROI from predictive maintenance.
+    """
+    oee: float
+    availability: float
+    performance: float
+    quality: float
+    downtimeAvoidedHours: float
+    costSavings: float

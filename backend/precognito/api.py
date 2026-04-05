@@ -5,6 +5,7 @@ Coordinates database connections, authentication, auditing, and routing.
 import os
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException, Depends
@@ -26,7 +27,8 @@ from precognito.auth import (
 # Import routers from other modules
 from precognito.work_orders.api import router as workorder_router
 from precognito.inventory.api import router as inventory_router
-from precognito.financial.routes import router as financial_router
+from precognito.financial.routes import router as financial_router, get_reporting_service
+from precognito.financial.models import OEEMetricsResponse
 
 # Initialize logging before app definition
 setup_logging()
@@ -91,6 +93,24 @@ async def debug_auth(request: Request):
         "headers": {k: v for k, v in request.headers.items() if k.lower() in ["authorization", "cookie"]},
         "remote_addr": request.client.host
     }
+
+@app.get("/analytics/oee")
+async def get_oee_metrics(
+    device_id: Optional[str] = None, 
+    user = lead_above, 
+    service = Depends(get_reporting_service)
+):
+    """Retrieves Overall Equipment Effectiveness (OEE) metrics.
+
+    Args:
+        device_id: Optional device ID to filter by.
+        user: The authenticated user (lead or above).
+        service: The reporting service instance.
+
+    Returns:
+        OEEMetricsResponse: The OEE metrics.
+    """
+    return service.get_oee_metrics(device_id)
 
 @app.get("/health")
 async def health_check(pool = Depends(get_db_pool)):

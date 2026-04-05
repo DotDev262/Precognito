@@ -47,7 +47,7 @@ export function PerformanceTrend({ metrics }: PerformanceTrendProps) {
     <div className="border border-[#334155] rounded-lg p-6 bg-[#1e293b]">
       <h3 className="text-sm text-[#94a3b8] mb-4">Performance Over Time (30 Days)</h3>
       <div className="h-[300px]">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
             <XAxis
