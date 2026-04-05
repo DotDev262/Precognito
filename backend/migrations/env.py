@@ -9,8 +9,6 @@ from alembic import context
 # Import models for autogenerate
 from precognito.work_orders.database import Base
 # Ensure all models are imported so they are registered with Base.metadata
-import precognito.work_orders.models
-import precognito.inventory.models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

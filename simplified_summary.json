@@ -4,12 +4,12 @@
     "anomalies_detected": 10,
     "normal_records": 0,
     "anomaly_rate": 100.0,
-    "processing_time": "2026-04-04T22:09:50.400576"
+    "processing_time": "2026-04-05T06:26:14.559547"
   },
   "results": [
     {
       "machine_id": "M1",
-      "timestamp": "2026-04-04T22:09:50.254018",
+      "timestamp": "2026-04-05T06:26:14.430550",
       "anomaly_detected": true,
       "anomaly_types": [
         "ML_Detected"
@@ -39,7 +39,7 @@
     },
     {
       "machine_id": "M1",
-      "timestamp": "2026-04-04T22:09:50.273972",
+      "timestamp": "2026-04-05T06:26:14.445572",
       "anomaly_detected": true,
       "anomaly_types": [
         "ML_Detected"
@@ -69,7 +69,7 @@
     },
     {
       "machine_id": "M1",
-      "timestamp": "2026-04-04T22:09:50.292510",
+      "timestamp": "2026-04-05T06:26:14.459593",
       "anomaly_detected": true,
       "anomaly_types": [
         "ML_Detected"
@@ -99,7 +99,7 @@
     },
     {
       "machine_id": "M1",
-      "timestamp": "2026-04-04T22:09:50.307721",
+      "timestamp": "2026-04-05T06:26:14.474323",
       "anomaly_detected": true,
       "anomaly_types": [
         "ML_Detected"
@@ -129,7 +129,7 @@
     },
     {
       "machine_id": "M2",
-      "timestamp": "2026-04-04T22:09:50.322764",
+      "timestamp": "2026-04-05T06:26:14.488069",
       "anomaly_detected": true,
       "anomaly_types": [
         "ML_Detected"
@@ -159,7 +159,7 @@
     },
     {
       "machine_id": "M2",
-      "timestamp": "2026-04-04T22:09:50.336867",
+      "timestamp": "2026-04-05T06:26:14.502132",
       "anomaly_detected": true,
       "anomaly_types": [
         "ML_Detected"
@@ -189,12 +189,12 @@
     },
     {
       "machine_id": "M2",
-      "timestamp": "2026-04-04T22:09:50.351698",
+      "timestamp": "2026-04-05T06:26:14.517813",
       "anomaly_detected": true,
       "anomaly_types": [
-        "torque",
         "temperature",
-        "ML_Detected"
+        "ML_Detected",
+        "torque"
       ],
       "severity": "HIGH",
       "confidence": 1.0,
@@ -230,7 +230,7 @@
     },
     {
       "machine_id": "M3",
-      "timestamp": "2026-04-04T22:09:50.365734",
+      "timestamp": "2026-04-05T06:26:14.531484",
       "anomaly_detected": true,
       "anomaly_types": [
         "ML_Detected"
@@ -260,7 +260,7 @@
     },
     {
       "machine_id": "M4",
-      "timestamp": "2026-04-04T22:09:50.379903",
+      "timestamp": "2026-04-05T06:26:14.545276",
       "anomaly_detected": true,
       "anomaly_types": [
         "ML_Detected"
@@ -290,7 +290,7 @@
     },
     {
       "machine_id": "M5",
-      "timestamp": "2026-04-04T22:09:50.400557",
+      "timestamp": "2026-04-05T06:26:14.559525",
       "anomaly_detected": true,
       "anomaly_types": [
         "ML_Detected"

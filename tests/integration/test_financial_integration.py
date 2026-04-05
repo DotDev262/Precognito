@@ -1,5 +1,4 @@
 import pytest
-from datetime import datetime, timezone
 from httpx import AsyncClient
 
 @pytest.mark.asyncio

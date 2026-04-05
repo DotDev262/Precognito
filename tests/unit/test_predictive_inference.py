@@ -1,4 +1,3 @@
-import pytest
 from precognito.predictive.predictive_engine import PredictiveInferenceEngine
 
 def test_tc_m3_01_rul_estimation():

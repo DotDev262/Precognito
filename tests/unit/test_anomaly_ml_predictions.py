@@ -12,7 +12,6 @@ def test_on_dataset_samples():
     print("=" * 50)
 
     # Load dataset
-    import os
     from pathlib import Path
     import precognito.anomaly as anomaly
     base_path = Path(anomaly.__file__).parent
@@ -149,7 +148,7 @@ def test_api_format():
         
         result = detect_anomaly(test_case)
         
-        print(f"Result:")
+        print("Result:")
         print(f"  Anomaly Detected: {result['anomaly_detected']}")
         print(f"  Overall Confidence: {result['confidence']:.3f}")
         print(f"  ML Method: {result['ml_analysis']['method']}")

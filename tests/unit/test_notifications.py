@@ -1,4 +1,3 @@
-import pytest
 from precognito.notifications import send_external_notification, notify_critical_anomaly
 
 def test_send_notification(mocker):

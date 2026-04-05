@@ -277,7 +277,7 @@ class AnomalyDetector:
                     label_encoder = pickle.load(f)
                 df_features['Type_encoded'] = label_encoder.transform(df_features['Type'])
                 df_features = df_features.drop('Type', axis=1)
-            except:
+            except Exception:
                 # Fallback: simple encoding
                 type_mapping = {'L': 0, 'M': 1, 'H': 2}
                 df_features['Type_encoded'] = df_features['Type'].map(type_mapping).fillna(1)

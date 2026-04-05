@@ -1,4 +1,3 @@
-import pytest
 from datetime import datetime, timezone
 from precognito.financial.services import AdminReportingService
 from precognito.financial.models import (

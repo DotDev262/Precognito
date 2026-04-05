@@ -3,7 +3,6 @@ Test simplified anomaly detection system
 """
 
 from precognito.anomaly.core import detect_anomaly, process_file
-import json
 
 def test_single_detection():
     """Test single anomaly detection"""
@@ -35,7 +34,6 @@ def test_batch_processing():
     print("="*40)
 
     # Process existing file
-    import os
     from pathlib import Path
     import precognito.anomaly as anomaly
     base_path = Path(anomaly.__file__).parent

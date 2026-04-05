@@ -101,11 +101,9 @@ class AdminReportingService:
                 
             # Formatting recommendation
             if rul > 0.4:
-                status = "Healthy"
                 recommendation = "Continue Operation."
                 explanation = f"Asset is healthy. Potential ROI of ${cost_avoided:,.0f} by scheduling maintenance before failure."
             elif rul > 0.1:
-                status = "Plan Maintenance"
                 recommendation = f"Schedule {decision} soon."
                 explanation = f"Predictive RUL is {int(rul*200)}h. Cost avoided if scheduled: ${cost_avoided:,.0f}."
             else:

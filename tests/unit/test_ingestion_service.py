@@ -1,4 +1,3 @@
-import pytest
 from precognito.ingestion.core import process_ingestion
 
 def test_process_ingestion_success(mocker):
@@ -8,7 +7,7 @@ def test_process_ingestion_success(mocker):
     mock_save_predictive = mocker.patch("precognito.ingestion.core.save_predictive_result")
     mock_detect_anomaly = mocker.patch("precognito.ingestion.core.detect_anomaly")
     mock_predict_rul = mocker.patch("precognito.ingestion.core.predict_rul")
-    mock_update_heartbeat = mocker.patch("precognito.ingestion.core.update_heartbeat")
+    mocker.patch("precognito.ingestion.core.update_heartbeat")
     mock_check_status = mocker.patch("precognito.ingestion.core.check_device_status")
     mock_check_alerts = mocker.patch("precognito.ingestion.core.check_alerts")
     mock_check_thermal = mocker.patch("precognito.ingestion.core.check_sustained_thermal")

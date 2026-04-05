@@ -70,7 +70,7 @@ def test_fixed_anomaly_detection():
         
         result = detect_anomaly(case['data'])
         
-        print(f"Result:")
+        print("Result:")
         print(f"  Anomaly Detected: {result['anomaly_detected']}")
         print(f"  Overall Confidence: {result['confidence']:.3f}")
         print(f"  ML Method: {result['ml_analysis']['method']}")
