@@ -15,6 +15,11 @@ describe('AssetsPage', () => {
     vi.mocked(api.getAssets).mockResolvedValue([]);
     render(<AssetsPage />);
     expect(screen.getByText(/Loading assets.../i)).toBeInTheDocument();
+    // Wait for the async effect to at least trigger its state update
+    // to avoid the "not wrapped in act" warning.
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading assets.../i)).not.toBeInTheDocument();
+    });
   });
 
   it('renders assets after loading', async () => {

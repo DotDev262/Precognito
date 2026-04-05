@@ -1,9 +1,24 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { render } from "@testing-library/react";
 import { AssetCard } from "./AssetCard";
 import { Asset } from "@/lib/types";
 
 describe("Visual Snapshots", () => {
+  const originalToLocaleString = Date.prototype.toLocaleString;
+
+  beforeAll(() => {
+    // Mock toLocaleString to always return a fixed format regardless of locale/timezone
+    Date.prototype.toLocaleString = vi.fn().mockImplementation(function() {
+      // @ts-ignore
+      const d = new Date(this.getTime());
+      return `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}, ${d.getUTCHours() % 12 || 12}:00:00 PM`;
+    });
+  });
+
+  afterAll(() => {
+    Date.prototype.toLocaleString = originalToLocaleString;
+  });
+
   it("AssetCard should match snapshot", () => {
     const mockAsset: Asset = {
       id: "motor_1",
