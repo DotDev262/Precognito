@@ -56,7 +56,7 @@ async def get_current_user(request: Request, pool: asyncpg.Pool = Depends(get_db
         logger.info(f"Looking for token: {session_token[:8]}...")
 
         session = await conn.fetchrow(
-            'SELECT userId, expiresAt, token FROM "session" WHERE token = $1 OR id = $1',
+            'SELECT "userId", "expiresAt", token FROM "session" WHERE token = $1 OR id = $1',
             session_token
         )
         
@@ -74,7 +74,7 @@ async def get_current_user(request: Request, pool: asyncpg.Pool = Depends(get_db
             raise HTTPException(status_code=401, detail="Session expired")
             
         user = await conn.fetchrow(
-            'SELECT * FROM "user" WHERE "id" = $1',
+            'SELECT * FROM "user" WHERE id = $1',
             session["userId"]
         )
         if not user:
