@@ -21,6 +21,17 @@ import paho.mqtt.client as mqtt
 import numpy as np
 from precognito.ingestion.dsp import process_raw_edge_data
 
+# Running operating-hours counter per device. Each emission counts as one
+# operating hour (documented simulator simplification for demo pacing).
+_DEVICE_HOURS = {}
+
+
+def bump_operating_hours(device_id):
+    """Advance and return the simulated operating-hours counter for a device."""
+    _DEVICE_HOURS[device_id] = _DEVICE_HOURS.get(device_id, 0) + 1
+    return _DEVICE_HOURS[device_id]
+
+
 # Anomaly probability weights - rare but impactful
 ANOMALY_TYPES = {
     "normal": 0.85,  # 85% normal operation
@@ -209,6 +220,7 @@ def run_http_simulator(url, device_id, interval, auth_token):
     try:
         while True:
             data = generate_sensor_data(device_id)
+            data["operating_hours"] = bump_operating_hours(device_id)
             try:
                 response = requests.post(url, json=data, headers=headers)
                 if response.status_code == 200:
@@ -247,6 +259,7 @@ def run_mqtt_simulator(broker, port, device_id, interval):
 
         while True:
             data = generate_sensor_data(device_id)
+            data["operating_hours"] = bump_operating_hours(device_id)
             topic = f"telemetry/{device_id}"
             client.publish(topic, json.dumps(data))
             print(f"MQTT Published to {topic}")

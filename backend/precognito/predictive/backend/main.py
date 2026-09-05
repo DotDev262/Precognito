@@ -82,7 +82,8 @@ async def predict_rul(data: TelemetryPayload):
         "vibration_rms": data.vibration_rms,
         "temperature": data.temperature,
         "freq_spike_1x": data.freq_spike_1x,
-        "freq_spike_bpfo": data.freq_spike_bpfo
+        "freq_spike_bpfo": data.freq_spike_bpfo,
+        "operating_hours": data.operating_hours
     }
     
     prediction = current_engine.predict(telemetry_data)

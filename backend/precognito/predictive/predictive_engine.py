@@ -37,7 +37,7 @@ class PredictiveInferenceEngine:
 
         Args:
             telemetry_data: Dictionary of sensor features (vibration_rms,
-                temperature, freq_spike_1x, freq_spike_bpfo).
+                temperature, freq_spike_1x, freq_spike_bpfo, operating_hours).
 
         Returns:
             A dictionary containing prediction results including:
@@ -56,7 +56,8 @@ class PredictiveInferenceEngine:
                 "risk_level": "Unknown"
             }
 
-        features = ["vibration_rms", "temperature", "freq_spike_1x", "freq_spike_bpfo"]
+        features = ["vibration_rms", "temperature", "freq_spike_1x", "freq_spike_bpfo",
+                    "operating_hours"]
         
         # Verify columns exist or fill a default (e.g., 0)
         df_row = {}

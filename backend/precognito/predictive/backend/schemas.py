@@ -15,6 +15,7 @@ class TelemetryPayload(BaseModel):
     temperature: float
     freq_spike_1x: float
     freq_spike_bpfo: float
+    operating_hours: float = 0.0
 
 class PredictionResponse(BaseModel):
     """Schema for machine health prediction responses.

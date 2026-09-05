@@ -28,7 +28,9 @@ def preprocess(data: dict) -> dict:
         # Predictive features
         "vibration_rms": ["vibration_rms", "rms_vibration", "vibration"],
         "freq_spike_1x": ["freq_spike_1x", "1x_spike"],
-        "freq_spike_bpfo": ["freq_spike_bpfo", "bpfo_spike"]
+        "freq_spike_bpfo": ["freq_spike_bpfo", "bpfo_spike"],
+        # Operating age disambiguates identical readings at different life stages
+        "operating_hours": ["operating_hours", "run_hours", "cycle", "operatingHours"],
     }
 
     for key, aliases in mapping.items():

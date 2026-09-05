@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 
-def generate_telemetry_data(num_machines=50, max_cycles=1000):
+def generate_telemetry_data(num_machines=50, max_cycles=1000, seed=42):
     """Generates a synthetic telemetry dataset for machine learning training.
 
     Creates vibration, temperature, and frequency spike data for multiple machines
@@ -16,7 +16,7 @@ def generate_telemetry_data(num_machines=50, max_cycles=1000):
     Returns:
         None. The generated data is saved to 'data/telemetry_dataset.csv'.
     """
-    np.random.seed(42)
+    np.random.seed(seed)
     data = []
     
     for machine_id in range(1, num_machines + 1):

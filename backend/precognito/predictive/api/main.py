@@ -45,6 +45,7 @@ class TelemetryPayload(BaseModel):
     temperature: float
     freq_spike_1x: float
     freq_spike_bpfo: float
+    operating_hours: float = 0.0
 
 @app.on_event("startup")
 def load_models():
@@ -83,7 +84,8 @@ def predict_rul(data: TelemetryPayload):
         "vibration_rms": data.vibration_rms,
         "temperature": data.temperature,
         "freq_spike_1x": data.freq_spike_1x,
-        "freq_spike_bpfo": data.freq_spike_bpfo
+        "freq_spike_bpfo": data.freq_spike_bpfo,
+        "operating_hours": data.operating_hours
     }
     
     

@@ -1,9 +1,13 @@
 import os
+from pathlib import Path
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from joblib import dump
+
+# Models live in predictive/models beside this package, independent of cwd.
+MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 
 def train_models():
     """Trains machine health prediction models using synthetic telemetry data.
@@ -22,7 +26,11 @@ def train_models():
     print("Loading data...")
     df = pd.read_csv("data/telemetry_dataset.csv")
 
-    features = ["vibration_rms", "temperature", "freq_spike_1x", "freq_spike_bpfo"]
+    # Operating hours disambiguate identical sensor readings at different
+    # life stages (same vibration can mean months or hours left).
+    df["operating_hours"] = df["cycle"]
+    features = ["vibration_rms", "temperature", "freq_spike_1x", "freq_spike_bpfo",
+                "operating_hours"]
     target_rul = "rul"
     target_fault = "fault_type"
 
@@ -55,12 +63,12 @@ def train_models():
     fault_score = fault_model.score(X_f_test, y_f_test)
     print(f"Fault Classification Accuracy: {fault_score:.4f}")
 
-    # Save the models
-    os.makedirs('models', exist_ok=True)
-    dump(scaler, "models/scaler.joblib")
-    dump(rul_model, "models/rul_model.joblib")
-    dump(fault_model, "models/fault_model.joblib")
-    print("Models saved successfully in 'models/' directory.")
+    # Save the models next to this package so all engines load them
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    dump(scaler, MODEL_DIR / "scaler.joblib")
+    dump(rul_model, MODEL_DIR / "rul_model.joblib")
+    dump(fault_model, MODEL_DIR / "fault_model.joblib")
+    print(f"Models saved successfully in '{MODEL_DIR}'.")
 
 if __name__ == "__main__":
     train_models()

@@ -325,27 +325,37 @@ class AnomalyDetector:
             # Scale features
             features_scaled = self.scaler.transform(df_features)
 
-            # Predict anomaly
-            prediction = self.model.predict(features_scaled)[0]
-            anomaly_score = self.model.decision_function(features_scaled)[0]
+            # Predict anomaly.
+            # Classifier path uses a tuned probability threshold for low false
+            # alarms; the IsolationForest path is kept for older artifacts.
+            model_type = self.feature_stats.get("model_type", "IsolationForest")
+            threshold = float(self.feature_stats.get("threshold", 0.5))
+            method = "ML_IsolationForest"
+            if model_type != "IsolationForest" and hasattr(
+                self.model, "predict_proba"
+            ):
+                anomaly_score = float(
+                    self.model.predict_proba(features_scaled)[0][1]
+                )
+                is_anomaly = anomaly_score >= threshold
+                confidence = (
+                    anomaly_score if is_anomaly else 1.0 - anomaly_score
+                )
+                method = "ML_RandomForest"
+            else:
+                prediction = self.model.predict(features_scaled)[0]
+                anomaly_score = self.model.decision_function(features_scaled)[0]
 
-            # Convert prediction: -1 = anomaly, 1 = normal
-            is_anomaly = prediction == -1
+                # Convert prediction: -1 = anomaly, 1 = normal
+                is_anomaly = prediction == -1
 
-            # Calculate confidence based on anomaly score
-            confidence = abs(anomaly_score)
-
-            # Only flag as anomaly if score is significantly negative OR extreme values
-            if (
-                anomaly_score < -0.5
-            ):  # Increased threshold to reduce false alarms in simulator
-                is_anomaly = True
+                # Calculate confidence based on anomaly score
                 confidence = abs(anomaly_score)
 
-            # Also check if it's an extreme value (beyond 3.5 standard deviations)
-            if any(abs(val) > 3.5 for val in features_scaled[0]):
-                is_anomaly = True
-                confidence = max(confidence, 0.8)
+                # Also check if it's an extreme value (beyond 3.5 std devs)
+                if any(abs(val) > 3.5 for val in features_scaled[0]):
+                    is_anomaly = True
+                    confidence = max(confidence, 0.8)
 
             confidence = min(max(confidence, 0.0), 1.0)
 
@@ -385,7 +395,7 @@ class AnomalyDetector:
                 "anomaly_details": anomaly_details,
                 "confidence": confidence,
                 "score": anomaly_score,
-                "method": "ML_IsolationForest",
+                "method": method,
             }
 
         except Exception as e:

@@ -32,6 +32,7 @@ class PredictiveInferenceEngine:
                 - temperature
                 - freq_spike_1x
                 - freq_spike_bpfo
+                - operating_hours
 
         Returns:
             A dictionary containing the prediction results:
@@ -41,7 +42,8 @@ class PredictiveInferenceEngine:
                 - risk_level: Risk level (Normal, Warning, High-Risk).
                 - recommendation: Recommended maintenance action.
         """
-        features = ["vibration_rms", "temperature", "freq_spike_1x", "freq_spike_bpfo"]
+        features = ["vibration_rms", "temperature", "freq_spike_1x", "freq_spike_bpfo",
+                    "operating_hours"]
         
         # Verify columns exist or fill a default (e.g., 0)
         df_row = {}

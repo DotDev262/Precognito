@@ -2,7 +2,7 @@ from precognito.predictive.predictive_engine import PredictiveInferenceEngine
 
 def test_tc_m3_01_rul_estimation():
     # TC_M3_01: Input valid degradation telemetry -> calculate & display RUL
-    telemetry = {"vibration_rms": 1.2, "temperature": 48.0, "freq_spike_1x": 0.1, "freq_spike_bpfo": 0.05}
+    telemetry = {"vibration_rms": 1.2, "temperature": 48.0, "freq_spike_1x": 0.1, "freq_spike_bpfo": 0.05, "operating_hours": 100.0}
     engine = PredictiveInferenceEngine()
     result = engine.predict(telemetry)
     assert "predicted_rul_hours" in result
@@ -12,8 +12,8 @@ def test_tc_m3_01_rul_estimation():
 def test_tc_m3_02_failure_prediction():
     # TC_M3_02: Continuous degradation patterns -> Predicated time-to-failure
     engine = PredictiveInferenceEngine()
-    early_telemetry = {"vibration_rms": 1.0, "temperature": 45.0, "freq_spike_1x": 0.0, "freq_spike_bpfo": 0.0}
-    late_telemetry = {"vibration_rms": 6.8, "temperature": 92.0, "freq_spike_1x": 0.8, "freq_spike_bpfo": 0.1}
+    early_telemetry = {"vibration_rms": 1.0, "temperature": 45.0, "freq_spike_1x": 0.0, "freq_spike_bpfo": 0.0, "operating_hours": 50.0}
+    late_telemetry = {"vibration_rms": 6.8, "temperature": 92.0, "freq_spike_1x": 0.8, "freq_spike_bpfo": 0.1, "operating_hours": 800.0}
     
     early_result = engine.predict(early_telemetry)
     late_result = engine.predict(late_telemetry)
@@ -24,7 +24,7 @@ def test_tc_m3_02_failure_prediction():
 def test_tc_m3_03_confidence_scoring():
     # TC_M3_03: A confidence percentage is shown alongside prediction
     engine = PredictiveInferenceEngine()
-    telemetry = {"vibration_rms": 1.2, "temperature": 48.0, "freq_spike_1x": 0.1, "freq_spike_bpfo": 0.05}
+    telemetry = {"vibration_rms": 1.2, "temperature": 48.0, "freq_spike_1x": 0.1, "freq_spike_bpfo": 0.05, "operating_hours": 100.0}
     result = engine.predict(telemetry)
     assert "confidence_score_percent" in result
     assert 0.0 <= result["confidence_score_percent"] <= 100.0
@@ -33,7 +33,7 @@ def test_tc_m3_04_fault_classification():
     # TC_M3_04: Identify and display fault type
     engine = PredictiveInferenceEngine()
     # High vibration and 1x RPM spike typically matches our generator's misalignment pattern
-    misalign_telemetry = {"vibration_rms": 8.0, "temperature": 80.0, "freq_spike_1x": 0.9, "freq_spike_bpfo": 0.05}
+    misalign_telemetry = {"vibration_rms": 8.0, "temperature": 80.0, "freq_spike_1x": 0.9, "freq_spike_bpfo": 0.05, "operating_hours": 700.0}
     result_m = engine.predict(misalign_telemetry)
     assert "predicted_fault_type" in result_m
     assert result_m["predicted_fault_type"] in ["Misalignment", "Bearing Wear", "Normal"]
@@ -42,7 +42,7 @@ def test_tc_m3_05_planning_support():
     # TC_M3_05: RUL value falls below defined threshold -> High-Risk, recommend immediate maintenance.
     engine = PredictiveInferenceEngine()
     # Provide data that indicates severe degradation -> RUL < 48 hours
-    severe_telemetry = {"vibration_rms": 10.5, "temperature": 110.0, "freq_spike_1x": 1.5, "freq_spike_bpfo": 1.5}
+    severe_telemetry = {"vibration_rms": 10.5, "temperature": 110.0, "freq_spike_1x": 1.5, "freq_spike_bpfo": 1.5, "operating_hours": 900.0}
     result = engine.predict(severe_telemetry)
     
     if result["predicted_rul_hours"] < 48:
@@ -52,7 +52,7 @@ def test_tc_m3_05_planning_support():
 def test_tc_m3_06_decision_visualization():
     # TC_M3_06: Predictions finalized by engine (returns dictionary for Dashboard to visualize)
     engine = PredictiveInferenceEngine()
-    telemetry = {"vibration_rms": 1.2, "temperature": 48.0, "freq_spike_1x": 0.1, "freq_spike_bpfo": 0.05}
+    telemetry = {"vibration_rms": 1.2, "temperature": 48.0, "freq_spike_1x": 0.1, "freq_spike_bpfo": 0.05, "operating_hours": 100.0}
     result = engine.predict(telemetry)
     
     required_keys = ["predicted_rul_hours", "predicted_fault_type", "confidence_score_percent", "risk_level"]

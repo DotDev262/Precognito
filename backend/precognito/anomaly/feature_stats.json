@@ -1,1 +1,1 @@
-{"feature_names": ["Air temperature [K]", "Process temperature [K]", "Rotational speed [rpm]", "Torque [Nm]", "Tool wear [min]", "Type_encoded"], "model_type": "IsolationForest", "contamination": null, "features_count": 6}
+{"feature_names": ["Air temperature [K]", "Process temperature [K]", "Rotational speed [rpm]", "Torque [Nm]", "Tool wear [min]", "Type_encoded"], "model_type": "RandomForestClassifier", "threshold": 0.8, "features_count": 6}
